@@ -19,6 +19,23 @@ class Schema(BaseModel):
 
 
 # --------------------------------------------------------------------------
+# Connexion
+# --------------------------------------------------------------------------
+
+class Token(Schema):
+    access_token: str
+    token_type: str
+
+
+class MoiOut(Schema):
+    id: int
+    login: str
+    nom: str
+    prenom: str
+    role: str
+
+
+# --------------------------------------------------------------------------
 # Ce que l'API renvoie
 # --------------------------------------------------------------------------
 
@@ -87,8 +104,6 @@ class RDVCreation(Schema):
     fin: datetime
     statut: Statut = "planifie"
     commentaire: Optional[str] = None
-    # En attendant la connexion (étape suivante), on indique qui crée le RDV.
-    createur_id: int
     soignant_id: int
     patient_id: int
     type_id: int

@@ -3,6 +3,10 @@ Routes des rendez-vous : lire (agenda), créer, modifier, annuler.
 
 Un "agenda" n'est pas stocké : c'est simplement la liste des RDV filtrée
 (par patient, par soignant, par période).
+
+Droits :
+- Patient : voit UNIQUEMENT ses propres RDV, ne peut rien créer ni modifier.
+- Soignant et administrateur : voient tous les RDV, peuvent créer, modifier, annuler.
 """
 
 from datetime import datetime
@@ -14,7 +18,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from app import models as m
 from app import schemas
-from app.deps import get_db
+from app.deps import get_db, soignant_connecte, utilisateur_courant
 
 router = APIRouter(prefix="/rdv", tags=["Rendez-vous"])
 
@@ -35,9 +39,8 @@ def _rdv_ou_404(db: Session, rdv_id: int) -> m.RDV:
 
 
 def _verifier_liens(db: Session, donnees: dict):
-    """Vérifie que les numéros donnés (patient, soignant, type, lieu...) existent."""
+    """Vérifie que les numéros donnés (patient, soignant, type, lieu) existent."""
     verifications = [
-        ("createur_id", m.Utilisateur, "Utilisateur créateur"),
         ("soignant_id", m.Soignant, "Soignant"),
         ("patient_id", m.Patient, "Patient"),
         ("type_id", m.TypeRDV, "Type de RDV"),
@@ -59,8 +62,16 @@ def lister_rdv(
     au: Optional[datetime] = Query(None, description="RDV qui commencent avant cette date"),
     limite: int = Query(500, ge=1, le=3000, description="Nombre maximum de RDV renvoyés"),
     db: Session = Depends(get_db),
+    utilisateur: m.Utilisateur = Depends(utilisateur_courant),
 ):
-    """Liste des RDV, triés par date. Tous les filtres sont facultatifs."""
+    """Liste des RDV, triés par date. Un patient ne voit que les siens."""
+    if isinstance(utilisateur, m.Patient):
+        if patient_id is not None and patient_id != utilisateur.id:
+            raise HTTPException(
+                status_code=403, detail="Vous ne pouvez consulter que votre propre agenda."
+            )
+        patient_id = utilisateur.id  # on force le filtre : il ne verra que ses RDV
+
     requete = select(m.RDV).options(*CHARGER_LIENS)
     if patient_id is not None:
         requete = requete.where(m.RDV.patient_id == patient_id)
@@ -75,16 +86,27 @@ def lister_rdv(
 
 
 @router.get("/{rdv_id}", response_model=schemas.RDVOut)
-def lire_rdv(rdv_id: int, db: Session = Depends(get_db)):
-    """Un seul RDV."""
-    return _rdv_ou_404(db, rdv_id)
+def lire_rdv(
+    rdv_id: int,
+    db: Session = Depends(get_db),
+    utilisateur: m.Utilisateur = Depends(utilisateur_courant),
+):
+    """Un seul RDV. Un patient ne peut lire que les siens."""
+    rdv = _rdv_ou_404(db, rdv_id)
+    if isinstance(utilisateur, m.Patient) and rdv.patient_id != utilisateur.id:
+        raise HTTPException(status_code=403, detail="Ce RDV n'est pas le vôtre.")
+    return rdv
 
 
 @router.post("", response_model=schemas.RDVOut, status_code=201)
-def creer_rdv(donnees: schemas.RDVCreation, db: Session = Depends(get_db)):
-    """Crée un RDV."""
+def creer_rdv(
+    donnees: schemas.RDVCreation,
+    db: Session = Depends(get_db),
+    soignant: m.Soignant = Depends(soignant_connecte),
+):
+    """Crée un RDV. Le créateur est la personne connectée (soignants uniquement)."""
     _verifier_liens(db, donnees.model_dump())
-    rdv = m.RDV(**donnees.model_dump())
+    rdv = m.RDV(**donnees.model_dump(), createur_id=soignant.id)
     db.add(rdv)
     db.commit()
     return _rdv_ou_404(db, rdv.id)
@@ -92,9 +114,12 @@ def creer_rdv(donnees: schemas.RDVCreation, db: Session = Depends(get_db)):
 
 @router.patch("/{rdv_id}", response_model=schemas.RDVOut)
 def modifier_rdv(
-    rdv_id: int, donnees: schemas.RDVModification, db: Session = Depends(get_db)
+    rdv_id: int,
+    donnees: schemas.RDVModification,
+    db: Session = Depends(get_db),
+    soignant: m.Soignant = Depends(soignant_connecte),
 ):
-    """Modifie un RDV (par exemple pour le décaler). Seuls les champs envoyés changent."""
+    """Modifie un RDV, par exemple pour le décaler (soignants uniquement)."""
     rdv = _rdv_ou_404(db, rdv_id)
     changements = donnees.model_dump(exclude_unset=True)
     _verifier_liens(db, changements)
@@ -114,8 +139,12 @@ def modifier_rdv(
 
 
 @router.post("/{rdv_id}/annuler", response_model=schemas.RDVOut)
-def annuler_rdv(rdv_id: int, db: Session = Depends(get_db)):
-    """Annule un RDV : on change son statut, on ne le supprime jamais."""
+def annuler_rdv(
+    rdv_id: int,
+    db: Session = Depends(get_db),
+    soignant: m.Soignant = Depends(soignant_connecte),
+):
+    """Annule un RDV : on change son statut, on ne le supprime jamais (soignants uniquement)."""
     rdv = _rdv_ou_404(db, rdv_id)
     rdv.statut = m.STATUT_ANNULE
     db.commit()
