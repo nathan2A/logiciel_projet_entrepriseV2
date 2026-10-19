@@ -38,7 +38,7 @@ from typing import Literal, Optional
 # BaseModel : classe de base des schémas Pydantic
 # ConfigDict : permet de configurer leur comportement
 # model_validator : vérifie des conditions entre champs
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # --------------------------------------------------------------------------
 # Status autorisés
@@ -400,3 +400,137 @@ class RDVModification(Schema):
     type_id: Optional[int] = None
     # Changement de lieu
     lieu_id: Optional[int] = None
+
+
+# --------------------------------------------------------------------------
+# Gestion des comptes (administrateur)
+# --------------------------------------------------------------------------
+
+Role = Literal["patient", "soignant", "administrateur"]
+
+
+def _mot_de_passe_valide(valeur: str) -> str:
+    if len(valeur) < 8:
+        raise ValueError("Le mot de passe doit faire au moins 8 caractères.")
+    if len(valeur.encode()) > 72:
+        raise ValueError("Le mot de passe est trop long (72 octets maximum).")
+    return valeur
+
+
+class UtilisateurOut(Schema):
+    """Un compte, quel que soit son rôle. Les champs qui ne concernent pas le rôle restent vides."""
+
+    id: int
+    login: str
+    nom: str
+    prenom: str
+    role: str
+    profession: Optional[str] = None
+    date_arrivee: Optional[date] = None
+    date_depart_prevue: Optional[date] = None
+    chambre_id: Optional[int] = None
+
+
+class CompteCreation(Schema):
+    role: Role
+    login: str = Field(min_length=3, max_length=255)
+    nom: str = Field(min_length=1, max_length=100)
+    prenom: str = Field(min_length=1, max_length=100)
+    mot_de_passe: str
+    # Soignant et administrateur
+    profession: Optional[str] = None
+    # Patient
+    date_arrivee: Optional[date] = None
+    date_depart_prevue: Optional[date] = None
+    chambre_id: Optional[int] = None
+
+    @field_validator("login")
+    @classmethod
+    def login_propre(cls, valeur):
+        return valeur.strip().lower()
+
+    @field_validator("mot_de_passe")
+    @classmethod
+    def mot_de_passe_ok(cls, valeur):
+        return _mot_de_passe_valide(valeur)
+
+    @model_validator(mode="after")
+    def champs_selon_le_role(self):
+        if self.role in ("soignant", "administrateur"):
+            if not self.profession:
+                raise ValueError("La profession est obligatoire pour un soignant ou un administrateur.")
+            if self.date_arrivee or self.date_depart_prevue or self.chambre_id is not None:
+                raise ValueError("Dates et chambre ne concernent que les patients.")
+        else:
+            if self.date_arrivee is None:
+                raise ValueError("La date d'arrivée est obligatoire pour un patient.")
+            if self.profession:
+                raise ValueError("La profession ne concerne que les soignants.")
+            if self.date_depart_prevue and self.date_depart_prevue < self.date_arrivee:
+                raise ValueError("Le départ prévu doit être après l'arrivée.")
+        return self
+
+
+class CompteModification(Schema):
+    """Tous les champs sont facultatifs. Le rôle ne peut pas être modifié."""
+
+    login: Optional[str] = Field(None, min_length=3, max_length=255)
+    nom: Optional[str] = Field(None, min_length=1, max_length=100)
+    prenom: Optional[str] = Field(None, min_length=1, max_length=100)
+    mot_de_passe: Optional[str] = None
+    profession: Optional[str] = None
+    date_arrivee: Optional[date] = None
+    date_depart_prevue: Optional[date] = None
+    chambre_id: Optional[int] = None
+
+    @field_validator("login")
+    @classmethod
+    def login_propre(cls, valeur):
+        return valeur.strip().lower() if valeur else valeur
+
+    @field_validator("mot_de_passe")
+    @classmethod
+    def mot_de_passe_ok(cls, valeur):
+        return _mot_de_passe_valide(valeur) if valeur is not None else valeur
+
+
+class MotDePasseChangement(Schema):
+    ancien: str
+    nouveau: str
+
+    @field_validator("nouveau")
+    @classmethod
+    def nouveau_ok(cls, valeur):
+        return _mot_de_passe_valide(valeur)
+
+
+# --------------------------------------------------------------------------
+# Plan du service : "qui est où"
+# --------------------------------------------------------------------------
+
+class RDVResume(Schema):
+    id: int
+    debut: datetime
+    fin: datetime
+    statut: str
+    soignant: SoignantResume
+    type: TypeRDVOut
+    lieu: LieuOut
+
+
+class PatientPlan(Schema):
+    patient: PatientResume
+    rdv_en_cours: Optional[RDVResume] = None
+
+
+class ChambrePlan(Schema):
+    id: int
+    numero: int
+    etage: int
+    patients: list[PatientPlan]
+
+
+class PlanOut(Schema):
+    moment: datetime
+    chambres: list[ChambrePlan]
+    hors_chambre: list[PatientPlan]

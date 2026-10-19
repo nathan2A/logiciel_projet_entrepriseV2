@@ -3,7 +3,9 @@ deps.py : outils partagés par les routes.
 
 - get_db()             : ouvre/referme la conversation avec la base pour chaque demande.
 - utilisateur_courant(): retrouve QUI fait la demande grâce à son jeton de connexion.
-- soignant_connecte()  : comme le précédent, mais refuse les patients (accès réservé aux soignants et à l'administrateur, qui est un soignant).
+- soignant_connecte()  : comme le précédent, mais refuse les patients (accès réservé
+                         aux soignants et à l'administrateur, qui est un soignant).
+- administrateur_connecte() : réservé à l'administrateur (gestion des comptes).
 """
 
 from fastapi import Depends, HTTPException
@@ -52,4 +54,13 @@ def soignant_connecte(
     """Réservé aux soignants (l'administrateur en est un). Les patients reçoivent 403."""
     if not isinstance(utilisateur, m.Soignant):
         raise HTTPException(status_code=403, detail="Accès réservé aux soignants.")
+    return utilisateur
+
+
+def administrateur_connecte(
+    utilisateur: m.Utilisateur = Depends(utilisateur_courant),
+) -> m.Administrateur:
+    """Réservé à l'administrateur. Les autres reçoivent 403."""
+    if not isinstance(utilisateur, m.Administrateur):
+        raise HTTPException(status_code=403, detail="Accès réservé à l'administrateur.")
     return utilisateur
