@@ -1,3 +1,8 @@
+"""Point d'entrée de l'API FastAPI.
+Crée l'application, enregistre les routes de connexion,
+de rendez-vous et de référentiel.
+"""
+
 from fastapi import FastAPI
 from app.routers import referentiel, rdv, auth
 
