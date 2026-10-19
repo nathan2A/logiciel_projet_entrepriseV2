@@ -1,6 +1,26 @@
 """
 Modèles SQLAlchemy – v1 de l'agenda partagé (SMR Carhaix).
 
+OBJECTIF :
+Définir les différentes tables utilisées par l'application
+d'agenda partagé des professionnels de santé.
+
+Le fichier contient :
+    1. Les rôles et statuts disponibles
+    2. Les utilisateurs (patients, soignants, administrateurs)
+    3. Les chambres et lieux d'intervention
+    4. Les types de rendez-vous
+    5. Les rendez-vous et leurs relations
+
+Chaque classe représente une entité du modèle de données.
+
+Les relations permettent de savoir :
+    - Quel patient est concerné par un RDV
+    - Quel soignant réalise l'intervention
+    - Qui a créé le RDV
+    - Où et quand se déroule le RDV
+    - Quel type d'intervention est prévu
+
 Traduction du diagramme UML v1 :
 
     Utilisateur  <|--  Soignant  <|--  Administrateur
@@ -22,18 +42,23 @@ Choix techniques :
   simplifier les migrations Alembic.
 """
 
+# --------------------------------------------------------------------------
+# Importation des bibliothèques
+# --------------------------------------------------------------------------
 from sqlalchemy import (
-    CheckConstraint,
-    Column,
-    Date,
-    DateTime,
-    ForeignKey,
-    Integer,
-    String,
-    Text,
+    CheckConstraint,     # Vérifie une condition dans la base
+    Column,              # Définit une colonne de table
+    Date,                # Stocke une date sans heure
+    DateTime,            # Stocke une date et une heure
+    ForeignKey,          # Crée un lien entre deux tables
+    Integer,             # Nombre entier
+    String,              # Chaîne de caractères de taille limitée
+    Text,                # Texte libre
 )
 from sqlalchemy.orm import relationship
 
+# Base commune dont héritent les modèles SQLAlchemy
+# Définie dans le fichier database.py
 from app.database import Base
 
 
@@ -41,14 +66,21 @@ from app.database import Base
 # Valeurs autorisées (constantes réutilisables dans l'API et l'interface)
 # --------------------------------------------------------------------------
 
+# Rôles possibles des utilisateurs de l'application
 ROLE_PATIENT = "patient"
 ROLE_SOIGNANT = "soignant"
 ROLE_ADMINISTRATEUR = "administrateur"
 
+
+# Statuts possibles d'un rendez-vous
 STATUT_PLANIFIE = "planifie"
 STATUT_EN_ATTENTE = "en_attente"
 STATUT_REALISE = "realise"
 STATUT_ANNULE = "annule"
+
+# Regroupement des statuts utilisés dans l'application.
+# Attention : cette liste ne constitue pas, à elle seule,
+# une contrainte de validation dans la base de données.
 STATUTS_RDV = [STATUT_PLANIFIE, STATUT_EN_ATTENTE, STATUT_REALISE, STATUT_ANNULE]
 
 
@@ -57,27 +89,69 @@ STATUTS_RDV = [STATUT_PLANIFIE, STATUT_EN_ATTENTE, STATUT_REALISE, STATUT_ANNULE
 # --------------------------------------------------------------------------
 
 class Utilisateur(Base):
-    """Classe de base : tout le monde a un compte (patient, soignant, admin)."""
+    """
+    Classe générale représentant un utilisateur.
 
+    Tous les utilisateurs possèdent :
+        - Un identifiant
+        - Un nom et un prénom
+        - Un login
+        - Un mot de passe haché
+        - Un rôle
+
+    Les patients, soignants et administrateurs
+    héritent de cette classe.
+    """
+
+    # Nom de la table PostgreSQL
     __tablename__ = "utilisateurs"
 
+    # Identifiant unique de chaque utilisateur
+    # primary_key=True : clé primaire de la table
     id = Column(Integer, primary_key=True)
+
+    # Informations personnelles obligatoires
+    # nullable=False : le champ ne peut pas être NULL
     nom = Column(String(100), nullable=False)
     prenom = Column(String(100), nullable=False)
+
+    # Identifiant utilisé pour se connecter
+    # unique=True : deux utilisateurs ne peuvent pas
+    # avoir le même login
     login = Column(String(255), nullable=False, unique=True)
+
+    # Le mot de passe n'est jamais stocké en clair.
+    # On conserve uniquement son empreinte (hash).
     mot_de_passe_hash = Column(String(255), nullable=False)  # jamais en clair
+    
     # Colonne qui indique de quel type est l'utilisateur
+    # Détermine si l'utilisateur est un patient,
+    # un soignant ou un administrateur.
     role = Column(String(30), nullable=False)
 
+    # Configuration de l'héritage SQLAlchemy.
+    # polymorphic_on : colonne permettant de déterminer
+    # la classe réelle de l'utilisateur.
+    # polymorphic_identity : valeur correspondant
+    # à cette classe générale.
     __mapper_args__ = {
         "polymorphic_on": role,
         "polymorphic_identity": "utilisateur",
     }
 
     def __repr__(self):
+        """
+        Fournit une représentation lisible de l'objet.
+
+        Utile lors du débogage pour identifier facilement
+        un utilisateur.
+        """
         return f"<{self.__class__.__name__} {self.id} {self.prenom} {self.nom}>"
 
 
+# --------------------------------------------------------------------------
+# Soignants
+# --------------------------------------------------------------------------
 class Soignant(Utilisateur):
     __tablename__ = "soignants"
 
