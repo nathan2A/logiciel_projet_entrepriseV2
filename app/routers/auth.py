@@ -4,13 +4,13 @@ Routes de connexion : se connecter, et savoir qui je suis.
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app import models as m
 from app import schemas
 from app.deps import get_db, utilisateur_courant
-from app.security import creer_jeton, verifier_mot_de_passe
+from app.security import creer_jeton, hacher_mot_de_passe, verifier_mot_de_passe
 
 router = APIRouter(prefix="/auth", tags=["Connexion"])
 
@@ -24,7 +24,9 @@ def connexion(
     Le champ « username » du formulaire est le login (ex. a05, kine1, admin).
     """
     utilisateur = db.scalar(
-        select(m.Utilisateur).where(m.Utilisateur.login == formulaire.username)
+        select(m.Utilisateur).where(
+            func.lower(m.Utilisateur.login) == formulaire.username.strip().lower()
+        )
     )
     # Même message dans les deux cas : on ne révèle pas si le login existe
     if utilisateur is None or not verifier_mot_de_passe(
@@ -42,3 +44,16 @@ def connexion(
 def qui_suis_je(utilisateur: m.Utilisateur = Depends(utilisateur_courant)):
     """Renvoie les informations de la personne connectée."""
     return utilisateur
+
+
+@router.post("/mot-de-passe", status_code=204)
+def changer_mot_de_passe(
+    donnees: schemas.MotDePasseChangement,
+    db: Session = Depends(get_db),
+    utilisateur: m.Utilisateur = Depends(utilisateur_courant),
+):
+    """Permet à la personne connectée de changer SON mot de passe."""
+    if not verifier_mot_de_passe(donnees.ancien, utilisateur.mot_de_passe_hash):
+        raise HTTPException(status_code=400, detail="L'ancien mot de passe est incorrect.")
+    utilisateur.mot_de_passe_hash = hacher_mot_de_passe(donnees.nouveau)
+    db.commit()

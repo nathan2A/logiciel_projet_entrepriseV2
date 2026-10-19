@@ -31,6 +31,11 @@ ALGORITHME = "HS256"
 DUREE_JETON_HEURES = 8  # une journée de travail
 
 
+def hacher_mot_de_passe(mot_de_passe: str) -> str:
+    """Transforme un mot de passe en empreinte (hash) à stocker dans la base."""
+    return bcrypt.hashpw(mot_de_passe.encode(), bcrypt.gensalt()).decode()
+
+
 def verifier_mot_de_passe(mot_de_passe: str, hash_enregistre: str) -> bool:
     """Compare un mot de passe saisi avec le hash stocké dans la base."""
     try:
