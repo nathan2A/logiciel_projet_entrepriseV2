@@ -116,8 +116,7 @@ class Utilisateur(Base):
     prenom = Column(String(100), nullable=False)
 
     # Identifiant utilisé pour se connecter
-    # unique=True : deux utilisateurs ne peuvent pas
-    # avoir le même login
+    # unique=True : deux utilisateurs ne peuvent pas avoir le même login
     login = Column(String(255), nullable=False, unique=True)
 
     # Le mot de passe n'est jamais stocké en clair.
@@ -125,15 +124,12 @@ class Utilisateur(Base):
     mot_de_passe_hash = Column(String(255), nullable=False)  # jamais en clair
     
     # Colonne qui indique de quel type est l'utilisateur
-    # Détermine si l'utilisateur est un patient,
-    # un soignant ou un administrateur.
+    # Détermine si l'utilisateur est un patient, un soignant ou un administrateur.
     role = Column(String(30), nullable=False)
 
     # Configuration de l'héritage SQLAlchemy.
-    # polymorphic_on : colonne permettant de déterminer
-    # la classe réelle de l'utilisateur.
-    # polymorphic_identity : valeur correspondant
-    # à cette classe générale.
+    # polymorphic_on : colonne permettant de déterminer la classe réelle de l'utilisateur.
+    # polymorphic_identity : valeur correspondant à cette classe générale.
     __mapper_args__ = {
         "polymorphic_on": role,
         "polymorphic_identity": "utilisateur",
@@ -153,22 +149,68 @@ class Utilisateur(Base):
 # Soignants
 # --------------------------------------------------------------------------
 class Soignant(Utilisateur):
+    """
+    Représente un professionnel de santé.
+
+    Hérite des informations de Utilisateur
+    et ajoute sa profession.
+
+    Exemples :
+        - Kinésithérapeute
+        - Infirmier / infirmière (IDE)
+        - Enseignant en activité physique adaptée (EAPA)
+        - Ergothérapeute
+
+    Un soignant peut être associé à plusieurs RDV.
+    """
+
     __tablename__ = "soignants"
 
+    # L'identifiant du soignant est aussi un identifiant de la table utilisateurs.
+    # ForeignKey : établit une référence vers utilisateurs.id.
     id = Column(Integer, ForeignKey("utilisateurs.id"), primary_key=True)
+
+    # Profession exercée par le soignant
     profession = Column(String(100), nullable=False)  # kiné, IDE, EAPA, ergo...
 
+    # Identifie ce modèle comme un soignant
     __mapper_args__ = {"polymorphic_identity": ROLE_SOIGNANT}
 
     # RDV dont ce soignant est l'intervenant
+    # Relation avec les rendez-vous.
+    # Un soignant peut intervenir sur plusieurs RDV.
+    # back_populates : associe cette relation à l'attribut "soignant" de la classe RDV.
+    # foreign_keys : indique quelle clé étrangère est utilisée pour réaliser l'association.
     rdvs = relationship(
         "RDV", back_populates="soignant", foreign_keys="RDV.soignant_id"
     )
 
 
+# --------------------------------------------------------------------------
+# Administrateur
+# --------------------------------------------------------------------------
 class Administrateur(Soignant):
-    """Un administrateur est un soignant qui peut en plus gérer les comptes.
+    """
+    Représente un soignant disposant d'un rôle
+    d'administrateur.
 
+    Il hérite :
+        - Des informations d'Utilisateur
+        - Des informations de Soignant
+
+    Particularité :
+    Il ne possède pas de table spécifique.
+
+    Les administrateurs sont enregistrés dans
+    les tables utilisateurs et soignants.
+
+    Leur rôle permet de les distinguer des
+    autres professionnels de santé.
+
+    Cette classe définit leur identité ORM,
+    mais les autorisations doivent être vérifiées
+    dans les routes de l'API.
+    
     Pas de __tablename__ : il utilise les tables `utilisateurs` et `soignants`
     et se distingue par role = 'administrateur'.
     """
@@ -176,18 +218,47 @@ class Administrateur(Soignant):
     __mapper_args__ = {"polymorphic_identity": ROLE_ADMINISTRATEUR}
 
 
+# --------------------------------------------------------------------------
+# Patients
+# --------------------------------------------------------------------------
 class Patient(Utilisateur):
+    """
+    Représente un patient pris en charge au SMR.
+
+    Le patient possède les informations générales
+    d'Utilisateur ainsi que :
+        - Sa date d'arrivée
+        - Sa date de départ prévue
+        - Sa chambre éventuelle
+
+    Un patient peut avoir plusieurs rendez-vous.
+    """
     __tablename__ = "patients"
 
+    # Identifiant partagé avec la table utilisateurs
     id = Column(Integer, ForeignKey("utilisateurs.id"), primary_key=True)
+    # Date d'arrivée du patient dans le service
     date_arrivee = Column(Date, nullable=False)
+
+    # Date de départ prévue.
+    # nullable=True : la date peut être inconnue.
     date_depart_prevue = Column(Date, nullable=True)
+    # Référence vers la chambre occupée.
+    # La chambre est facultative : certains patients peuvent ne pas en avoir,notamment en hospitalisation de jour.
     # Nullable : un patient peut ne pas (encore) avoir de chambre (ex. hôpital de jour)
     chambre_id = Column(Integer, ForeignKey("chambres.id"), nullable=True)
 
+    # Permet à SQLAlchemy d'identifier un patient
     __mapper_args__ = {"polymorphic_identity": ROLE_PATIENT}
 
+    # Association entre un patient et sa chambre
+    # patient.chambre permet d'accéder directement
+    # à l'objet Chambre correspondant.
     chambre = relationship("Chambre", back_populates="patients")
+
+    # Association entre un patient et ses RDV
+    # patient.rdvs permet de récupérer les
+    # interventions concernant ce patient.
     rdvs = relationship(
         "RDV", back_populates="patient", foreign_keys="RDV.patient_id"
     )
