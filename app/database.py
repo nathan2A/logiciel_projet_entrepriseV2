@@ -1,3 +1,8 @@
+"""Connexion à PostgreSQL et socle des modèles SQLAlchemy.
+Les paramètres sont lus depuis les variables d'environnement.
+Ce module ne crée pas les tables et ne gère pas les migrations.
+"""
+
 import os
 
 from dotenv import load_dotenv
@@ -19,4 +24,5 @@ engine = create_engine(DATABASE_URL)
 
 
 class Base(DeclarativeBase):
+    """Classe mère commune à toutes les tables SQLAlchemy."""
     pass
