@@ -265,71 +265,190 @@ class Patient(Utilisateur):
 
 
 # --------------------------------------------------------------------------
-# Lieux
+# Chambres
 # --------------------------------------------------------------------------
 
 class Chambre(Base):
+    """
+    Représente une chambre de l'établissement.
+
+    Chaque chambre possède :
+        - Un identifiant
+        - Un numéro
+        - Un étage
+
+    Le modèle permet d'associer plusieurs patients
+    à une même chambre.
+
+    Attention :
+    aucune contrainte de capacité ou d'occupation
+    temporelle n'est définie ici.
+    """
+
     __tablename__ = "chambres"
 
+    # Identifiant interne de la chambre
     id = Column(Integer, primary_key=True)
+    # Numéro unique dans le modèle actuel
     numero = Column(Integer, nullable=False, unique=True)
+    # Étage où se trouve la chambre
     etage = Column(Integer, nullable=False)
-
+    # Relation inverse de Patient.chambre
+    # chambre.patients donne accès à la liste des patients associés à cette chambre.
     patients = relationship("Patient", back_populates="chambre")
 
+# --------------------------------------------------------------------------
+# Lieux d'intervention
+# --------------------------------------------------------------------------
 
 class Lieu(Base):
-    """Où se déroule un RDV : chambre, plateau kiné, salle APA, extérieur..."""
+    """
+    Représente un lieu où se déroule une intervention.
+
+    Exemples :
+        - Chambre
+        - Plateau de kinésithérapie
+        - Salle APA
+        - Extérieur
+        - Salle de consultation
+
+    Les lieux permettent notamment de renseigner
+    l'emplacement d'un rendez-vous dans l'agenda.
+    """
 
     __tablename__ = "lieux"
 
+    # Identifiant unique
     id = Column(Integer, primary_key=True)
+    # Nom du lieu, obligatoirement unique
     libelle = Column(String(100), nullable=False, unique=True)
 
+    # Tous les rendez-vous associés à ce lieu
     rdvs = relationship("RDV", back_populates="lieu")
 
 
 # --------------------------------------------------------------------------
-# Rendez-vous
+# Types de rendez-vous
 # --------------------------------------------------------------------------
 
 class TypeRDV(Base):
-    """Nature d'un RDV : Kiné, EAPA, Ergothérapie, IDE, Consultation externe..."""
+    """
+    Définit les différentes catégories d'intervention.
+
+    Exemples :
+        - Kinésithérapie
+        - Activité physique adaptée
+        - Ergothérapie
+        - Soin infirmier
+        - Consultation extérieure
+
+    Chaque type possède une couleur et
+    une durée par défaut.
+
+    La couleur permet de distinguer visuellement
+    les catégories d'intervention dans l'agenda.
+    """
 
     __tablename__ = "types_rdv"
 
+    # Identifiant du type de rendez-vous
     id = Column(Integer, primary_key=True)
+    # Intitulé unique de l'intervention
     libelle = Column(String(100), nullable=False, unique=True)
+    # Couleur par défaut en notation hexadécimale.
+    # Exemple : "#3B82F6" correspond à un bleu.
+    # String(7) fixe la longueur maximale, mais ne vérifie pas le format hexadécimal.
     couleur = Column(String(7), nullable=False, default="#888888")  # ex. "#3B82F6"
+    
+     # Durée habituelle de l'intervention en minutes.
+    # Par défaut : 30 minutes.
+    # Ce paramètre n'impose pas automatiquement la durée des RDV qui utilisent ce type.
     duree_par_defaut = Column(Integer, nullable=False, default=30)  # en minutes
 
+    # Relation avec les RDV de ce type
     rdvs = relationship("RDV", back_populates="type")
 
-
+# --------------------------------------------------------------------------
+# Rendez-vous
+# --------------------------------------------------------------------------
 class RDV(Base):
+    """
+    Représente une intervention planifiée
+    dans l'agenda partagé.
+
+    Un rendez-vous possède :
+        - Une date et une heure de début
+        - Une date et une heure de fin
+        - Un statut
+        - Un commentaire facultatif
+
+    Il est associé à :
+        - Un créateur
+        - Un soignant
+        - Un patient
+        - Un type d'intervention
+        - Un lieu
+
+    Dans cette V1, chaque RDV est associé
+    à un seul patient et à un seul soignant.
+    """
     __tablename__ = "rdv"
+
+    # Contrainte appliquée directement dans PostgreSQL.
+    # Empêche qu'un rendez-vous se termine avant son heure de début ou à la même heure.
+    # Ne vérifie pas les chevauchements entre RDV.
     __table_args__ = (
         CheckConstraint("fin > debut", name="ck_rdv_fin_apres_debut"),
     )
 
+    # Identifiant unique du rendez-vous
     id = Column(Integer, primary_key=True)
+    # Date et heure de début
+    # index=True : crée un index pour accélérer certaines recherches sur cette colonne.
     debut = Column(DateTime, nullable=False, index=True)
+    # Date et heure de fin
     fin = Column(DateTime, nullable=False)
+    # État du rendez-vous
+    # Par défaut, un RDV créé est "planifie".
+    # Cette colonne n'impose pas à elle seule l'utilisation exclusive des statuts définis.
     statut = Column(String(20), nullable=False, default=STATUT_PLANIFIE)
+    # Informations complémentaires facultatives
     commentaire = Column(Text, nullable=True)
 
+    # --------------------------------------------------------------------------
+    # clef étrangère
+    # --------------------------------------------------------------------------
+
+    # Utilisateur ayant créé le rendez-vous
     createur_id = Column(Integer, ForeignKey("utilisateurs.id"), nullable=False)
+    # Professionnel chargé de réaliser l'intervention
     soignant_id = Column(Integer, ForeignKey("soignants.id"), nullable=False, index=True)
+    # Patient concerné par le rendez-vous
     patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    # Type d'intervention prévu
     type_id = Column(Integer, ForeignKey("types_rdv.id"), nullable=False)
+    # Lieu où se déroule l'intervention
     lieu_id = Column(Integer, ForeignKey("lieux.id"), nullable=False)
 
+
+    # --------------------------------------------------------------------------
+    # relations sqlalachemy
+    # --------------------------------------------------------------------------
+    
+    # Accès à l'utilisateur créateur du rendez-vous
+    # Exemple : rdv.createur.nom
     createur = relationship("Utilisateur", foreign_keys=[createur_id])
     soignant = relationship(
         "Soignant", back_populates="rdvs", foreign_keys=[soignant_id]
     )
+    # Accès au patient concerné
+    # Exemple : rdv.patient.nom
     patient = relationship(
         "Patient", back_populates="rdvs", foreign_keys=[patient_id]
     )
+    # Accès au type de rendez-vous
+    # Exemple : rdv.type.libelle
     type = relationship("TypeRDV", back_populates="rdvs")
+    # Accès au lieu d'intervention
+    # Exemple : rdv.lieu.libelle
     lieu = relationship("Lieu", back_populates="rdvs")
