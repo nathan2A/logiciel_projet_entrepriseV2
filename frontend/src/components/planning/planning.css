@@ -1,0 +1,116 @@
+/*
+ * Habillage de FullCalendar pour reproduire la maquette du planning
+ * (colonnes grises arrondies séparées, jour actuel vert, sans quadrillage).
+ */
+.planning-semaine .fc {
+  --fc-border-color: transparent;
+  --fc-today-bg-color: transparent;
+  --fc-page-bg-color: transparent;
+  --fc-neutral-bg-color: transparent;
+  --ecart-colonnes: 0.4rem;
+  font-family: inherit;
+}
+
+.planning-semaine .fc .fc-scrollgrid,
+.planning-semaine .fc-theme-standard td,
+.planning-semaine .fc-theme-standard th {
+  border: none;
+}
+
+/* Pas d'axe des heures : les heures sont écrites dans chaque bloc */
+.planning-semaine .fc .fc-timegrid-axis-cushion,
+.planning-semaine .fc .fc-timegrid-slot-label-cushion {
+  padding: 0;
+}
+.planning-semaine .fc .fc-timegrid-axis,
+.planning-semaine .fc .fc-timegrid-slot-label {
+  width: 0;
+}
+
+/* --- En-têtes « LUN.12 » : haut de la colonne grise --- */
+.planning-semaine .fc .fc-col-header-cell .fc-scrollgrid-sync-inner {
+  margin: 0 var(--ecart-colonnes);
+  padding: 0.5rem 0 0.7rem;
+  background: #e5ebeb;
+  border-radius: 0.625rem 0.625rem 0 0;
+}
+.planning-semaine .fc .fc-col-header-cell-cushion {
+  color: #000;
+  font-size: 1.6rem;
+  font-weight: 700;
+  padding: 0;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.planning-semaine .fc .fc-col-header-cell.fc-day-today .fc-scrollgrid-sync-inner {
+  background: #9de6ba;
+}
+
+/* --- Corps des colonnes --- */
+.planning-semaine .fc .fc-timegrid-col-frame {
+  margin: 0 var(--ecart-colonnes);
+  background: #e5ebeb;
+  border-radius: 0 0 0.625rem 0.625rem;
+  min-height: 100%;
+}
+.planning-semaine .fc .fc-timegrid-col.fc-day-today .fc-timegrid-col-frame {
+  background: #9de6ba;
+}
+.planning-semaine .fc .fc-timegrid-col-events {
+  margin: 0 0.45rem;
+}
+
+/* Plages repas à garder libres (11h-14h, 18h-20h) : léger hachuré */
+.planning-semaine .fc .fc-bg-event.plage-repas {
+  opacity: 1;
+  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0 0.3rem, transparent 0.3rem 0.6rem);
+}
+
+/* --- Blocs de rendez-vous --- */
+.planning-semaine .fc .fc-timegrid-event {
+  border-radius: 0.625rem;
+  border-width: 0;
+  box-shadow: none;
+  cursor: pointer;
+  margin-bottom: 2px;
+}
+.planning-semaine .fc .fc-timegrid-event-harness-inset .fc-timegrid-event {
+  box-shadow: none;
+}
+.planning-semaine .contenu-rdv {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0.1rem 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1.15;
+  text-align: center;
+}
+.planning-semaine .contenu-rdv .titre {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Enregistrement en cours */
+.planning-semaine .fc .rdv-en-cours {
+  opacity: 0.55;
+  animation: rdv-pulse 1s ease-in-out infinite;
+}
+@keyframes rdv-pulse {
+  50% { opacity: 0.35; }
+}
+
+/* Conflits renvoyés par le backend : couleur selon la gravité */
+.planning-semaine .fc .rdv-conflit-bloquant {
+  outline: 0.2rem solid #e61c26;
+  outline-offset: 1px;
+}
+.planning-semaine .fc .rdv-conflit-avertissement {
+  outline: 0.2rem dashed #ff8a00;
+  outline-offset: 1px;
+}
