@@ -1,0 +1,49 @@
+@import "@fontsource/poppins/400.css";
+@import "@fontsource/poppins/400-italic.css";
+@import "@fontsource/poppins/500.css";
+@import "@fontsource/poppins/600.css";
+@import "@fontsource/poppins/700.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+ * Taille de base : tout est exprimé en rem, donc l'interface grandit avec
+ * l'écran (portable 1280 px → écran mural). Le zoom du navigateur (Ctrl +)
+ * agrandit aussi tout, ce qui sert de réglage de taille de police côté patient.
+ */
+html {
+  font-size: clamp(14px, 0.9vw, 24px);
+}
+
+body {
+  @apply bg-white font-sans text-black antialiased;
+  min-width: 1280px; /* en dessous, la page défile horizontalement */
+}
+
+/* Focus clavier bien visible (WCAG) */
+:focus-visible {
+  outline: 3px solid #004aad;
+  outline-offset: 2px;
+}
+
+/* Écran trop étroit : message demandé dans le prompt */
+.ecran-trop-etroit { display: none; }
+@media (max-width: 1279px) {
+  .ecran-trop-etroit { display: block; }
+}
+
+/* Champs des pop-ups « Nouveau RDV » / « Modifier le RDV » : discrets, en italique comme la maquette */
+@layer components {
+  .champ-rdv {
+    @apply min-h-[1.75rem] rounded-none border-0 border-b border-dashed border-[#b5b5b5] bg-transparent px-[0.2rem] italic text-[#333];
+  }
+  .champ-rdv:focus,
+  .champ-rdv:focus-visible {
+    @apply border-solid border-lien outline-none;
+  }
+  .champ-rdv[aria-invalid="true"] {
+    @apply border-solid border-erreur;
+  }
+}

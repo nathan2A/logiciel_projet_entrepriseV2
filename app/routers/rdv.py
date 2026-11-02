@@ -150,3 +150,19 @@ def annuler_rdv(
     db.commit()
     db.expire_all()
     return _rdv_ou_404(db, rdv_id)
+
+
+@router.post("/{rdv_id}/terminer", response_model=schemas.RDVOut)
+def terminer_rdv(
+    rdv_id: int,
+    db: Session = Depends(get_db),
+    soignant: m.Soignant = Depends(soignant_connecte),
+):
+    """Marque la séance comme réalisée (le bouton « séance terminée » de l'interface)."""
+    rdv = _rdv_ou_404(db, rdv_id)
+    if rdv.statut == m.STATUT_ANNULE:
+        raise HTTPException(status_code=409, detail="Ce RDV est annulé, il ne peut pas être terminé.")
+    rdv.statut = m.STATUT_REALISE
+    db.commit()
+    db.expire_all()
+    return _rdv_ou_404(db, rdv_id)
