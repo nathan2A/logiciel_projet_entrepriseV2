@@ -35,6 +35,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 
 from app.database import Base
+from sqlalchemy import Boolean
 
 
 # --------------------------------------------------------------------------
@@ -62,7 +63,7 @@ class Utilisateur(Base):
     __tablename__ = "utilisateurs"
 
     id = Column(Integer, primary_key=True)
-    nom = Column(String(100), nullable=False)
+    nom = Column(String(100), nullable=False) 
     prenom = Column(String(100), nullable=False)
     login = Column(String(255), nullable=False, unique=True)
     mot_de_passe_hash = Column(String(255), nullable=False)  # jamais en clair
@@ -83,6 +84,7 @@ class Soignant(Utilisateur):
 
     id = Column(Integer, ForeignKey("utilisateurs.id"), primary_key=True)
     profession = Column(String(100), nullable=False)  # kiné, IDE, EAPA, ergo...
+    equipe = Column(String(20), nullable=True)
 
     __mapper_args__ = {"polymorphic_identity": ROLE_SOIGNANT}
 
@@ -110,7 +112,8 @@ class Patient(Utilisateur):
     date_depart_prevue = Column(Date, nullable=True)
     # Nullable : un patient peut ne pas (encore) avoir de chambre (ex. hôpital de jour)
     chambre_id = Column(Integer, ForeignKey("chambres.id"), nullable=True)
-
+    autonome = Column(Boolean, nullable=False, default=False)
+    
     __mapper_args__ = {"polymorphic_identity": ROLE_PATIENT}
 
     chambre = relationship("Chambre", back_populates="patients")

@@ -1,16 +1,13 @@
-"""Connexion à PostgreSQL et socle des modèles SQLAlchemy.
-Les paramètres sont lus depuis les variables d'environnement.
-Ce module ne crée pas les tables et ne gère pas les migrations.
-"""
+
+"""Connexion à PostgreSQL et socle des modèles SQLAlchemy."""
 
 import os
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 load_dotenv()
-
 
 DATABASE_URL = (
     f"postgresql+psycopg://"
@@ -19,8 +16,14 @@ DATABASE_URL = (
     f"/{os.getenv('POSTGRES_DB')}"
 )
 
-
 engine = create_engine(DATABASE_URL)
+
+# Fabrique de sessions pour interagir avec PostgreSQL
+SessionLocal = sessionmaker(
+    bind=engine,
+    autoflush=False,
+    expire_on_commit=False,
+)
 
 
 class Base(DeclarativeBase):
