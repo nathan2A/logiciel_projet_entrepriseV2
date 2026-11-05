@@ -4,6 +4,8 @@ Interface web de l'agenda partagé entre soignants et patients du SMR de Carhaix
 React 18 + TypeScript + Vite, Tailwind CSS, FullCalendar, React Router, TanStack Query.
 Cible : ordinateur (écran ≥ 1280 px, jusqu'à l'écran mural).
 
+> **Pour juste lancer le site : voir [`TUTO_DEMARRAGE.md`](TUTO_DEMARRAGE.md).**
+>
 > Le **Guide frontend – Agenda SMR Carhaix** (document partagé du groupe) détaille pas à pas
 > l'installation, le mode démo, le branchement au backend, Git et le dépannage. Ce README en est le résumé.
 
