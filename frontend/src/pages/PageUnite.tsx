@@ -4,6 +4,9 @@
  * agenda du patient) ; colonne 2 : RDV du matin ; colonne 3 : RDV de l'après-midi
  * (à partir de 13h), en pastilles au code couleur, par ordre chronologique.
  * Unité n = chambres de l'étage n (données du backend).
+ *
+ * Mise en page : le titre reste en haut, seul le tableau défile (sa barre de
+ * défilement est entre le tableau et la légende, qui reste visible à droite).
  */
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -21,6 +24,7 @@ import { saisieDepuisRdv } from "@/services/api/rdv";
 import { couleurRdv, couleurTexteSur } from "@/theme/couleursRdv";
 import type { PatientResume, RendezVous } from "@/types";
 import { depuisIso, heureCourte, jjmmaaaa } from "@/utils/dates";
+import { formatNom } from "@/utils/noms";
 
 /** Heure de coupure entre la colonne « matin » et la colonne « après-midi ». */
 const DEBUT_APRES_MIDI = 13;
@@ -54,7 +58,9 @@ export function PageUnite() {
   /** Une ligne par patient présent ; une chambre vide garde une ligne avec son seul numéro. */
   const lignes = useMemo(() => {
     const rdvParPatient = new Map<number, RendezVous[]>();
-    (rdvJour.data ?? []).forEach((r) => rdvParPatient.set(r.patient.id, [...(rdvParPatient.get(r.patient.id) ?? []), r]));
+    (rdvJour.data ?? []).forEach((r) => {
+      if (r.patient) rdvParPatient.set(r.patient.id, [...(rdvParPatient.get(r.patient.id) ?? []), r]);
+    });
     return (occupation.data ?? [])
       .filter((o) => o.chambre.etage === numeroUnite)
       .sort((a, b) => a.chambre.numero - b.chambre.numero)
@@ -76,13 +82,13 @@ export function PageUnite() {
   const cellule = "border-[0.15rem] border-black px-[0.5rem] py-[0.35rem] align-middle";
 
   return (
-    <div className="px-[2.2rem] pb-[2rem]">
-      <h1 className="sticky top-0 z-20 bg-white pb-[0.3rem] pt-[0.8rem] text-center text-[1.2rem] font-normal">
+    <div className="flex h-full min-h-[30rem] flex-col px-[2.2rem] pb-[1rem]">
+      <h1 className="shrink-0 pb-[0.3rem] pt-[0.8rem] text-center text-[1.2rem] font-normal">
         Unité {numeroUnite}, Date : {jjmmaaaa(aujourdhui)}
       </h1>
 
       {enErreur && (occupation.data || rdvJour.data) && (
-        <div className="mx-auto mt-[0.5rem] max-w-[50rem]">
+        <div className="mx-auto mt-[0.5rem] w-full max-w-[50rem] shrink-0">
           <BandeauHorsLigne
             message="Connexion au serveur perdue : les dernières données connues sont affichées."
             onReessayer={() => {
@@ -93,7 +99,8 @@ export function PageUnite() {
         </div>
       )}
 
-      <div className="mt-[0.6rem] grid grid-cols-[1fr_11rem] items-start gap-[1.5rem] pr-[1rem]">
+      <div className="mt-[0.6rem] flex min-h-0 flex-1 items-start gap-[1.2rem] pr-[1rem]">
+        <div className="max-h-full min-w-0 flex-1 overflow-y-auto pr-[0.3rem]" data-testid="defilement-unite">
         {occupation.isPending || rdvJour.isPending ? (
           <Chargement texte="Chargement de l'unité…" />
         ) : enErreur && !occupation.data ? (
@@ -125,10 +132,10 @@ export function PageUnite() {
                       <Link
                         to={`/patients/${l.patient.id}/agenda`}
                         className="flex h-full min-h-[2.4rem] w-full items-center justify-center px-[0.4rem] transition hover:bg-orange"
-                        aria-label={`Agenda de ${l.patient.nom} ${l.patient.prenom}, chambre ${l.numero}`}
+                        aria-label={`Agenda de ${formatNom(l.patient)}, chambre ${l.numero}`}
                       >
                         <span>
-                          {l.patient.nom} {l.patient.prenom} <strong>{l.numero}</strong>
+                          {formatNom(l.patient)} <strong>{l.numero}</strong>
                         </span>
                       </Link>
                     ) : (
@@ -149,8 +156,9 @@ export function PageUnite() {
             </tbody>
           </table>
         )}
+        </div>
 
-        <div className="sticky top-[5rem]">
+        <div className="w-[11rem] shrink-0">
           <LegendeCouleurs />
         </div>
       </div>
@@ -178,7 +186,14 @@ export function PageUnite() {
       )}
 
       {edition.avertissement && (
-        <AvertissementModal conflits={edition.avertissement.conflits} onConserver={edition.conserver} onRenoncer={edition.renoncer} />
+        <AvertissementModal
+          key={edition.avertissement.index}
+          conflit={edition.avertissement.conflits[edition.avertissement.index]}
+          position={edition.avertissement.index + 1}
+          total={edition.avertissement.conflits.length}
+          onContinuer={edition.continuer}
+          onRenoncer={edition.renoncer}
+        />
       )}
     </div>
   );

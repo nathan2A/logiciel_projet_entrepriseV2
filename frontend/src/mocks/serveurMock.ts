@@ -3,15 +3,15 @@
  * Il imite les routes FastAPI réelles et renvoie le même JSON, avec les mêmes
  * codes HTTP. Les modifications sont gardées en mémoire jusqu'au rechargement.
  *
- * Il simule aussi les conflits que le backend calculera plus tard (format
- * proposé dans le README). C'est le seul endroit où des conflits sont
- * calculés : le frontend, lui, ne fait que les afficher.
+ * Il simule aussi les conflits avec les mêmes règles que le backend
+ * (app/conflits.py). Le frontend, lui, ne fait que les afficher.
  *
  * Connexion : n'importe quel mot de passe est accepté ; l'identifiant est
  * « NOM Prénom » d'une personne des données (ex. « DUPONT Daniel »).
  */
 import type { Reponse, Requete, Transport } from "@/services/api/client";
 import type { ConflitJSON, RDVCreationJSON, RDVJSON } from "@/services/api/backendTypes";
+import { formatNom } from "@/utils/noms";
 import { chambres, genererRdv, lieux, typesRdv, utilisateurs, type RdvMock, type UtilisateurMock } from "./donnees";
 
 let rdvs: RdvMock[] = genererRdv();
@@ -47,64 +47,98 @@ function patientJSON(u: UtilisateurMock) {
 }
 
 function rdvJSON(r: RdvMock): RDVJSON {
-  const p = utilisateurs.find((u) => u.id === r.patient_id)!;
-  const s = utilisateurs.find((u) => u.id === r.soignant_id)!;
+  const p = r.patient_id == null ? undefined : utilisateurs.find((u) => u.id === r.patient_id);
+  const soignantsDuRdv = r.soignant_ids
+    .map((id) => utilisateurs.find((u) => u.id === id)!)
+    .sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
   return {
     id: r.id, debut: r.debut, fin: r.fin, statut: r.statut, commentaire: r.commentaire,
     createur_id: r.createur_id,
-    patient: { id: p.id, login: p.login, nom: p.nom, prenom: p.prenom },
-    soignant: { id: s.id, nom: s.nom, prenom: s.prenom, profession: s.profession! },
+    patient: p ? { id: p.id, login: p.login, nom: p.nom, prenom: p.prenom } : null,
+    soignants: soignantsDuRdv.map((s) => ({ id: s.id, nom: s.nom, prenom: s.prenom, profession: s.profession! })),
     type: typesRdv.find((t) => t.id === r.type_id)!,
     lieu: lieux.find((l) => l.id === r.lieu_id)!,
   };
 }
 
 /* ----------------------------- Conflits simulés ----------------------------- */
+// Mêmes règles et mêmes messages que le backend (app/conflits.py) : ce sont
+// toutes des avertissements, dans l'ordre patient puis soignants.
 
 const heureDe = (iso: string) => Number(iso.slice(11, 13)) * 60 + Number(iso.slice(14, 16));
 const chevauche = (a: { debut: string; fin: string }, b: { debut: string; fin: string }) =>
   a.debut < b.fin && b.debut < a.fin;
+const memeSeance = (a: RdvMock, b: RdvMock) =>
+  a.debut === b.debut && a.fin === b.fin && a.type_id === b.type_id && a.lieu_id === b.lieu_id;
+
+/** Horaires habituels par profession (minutes depuis minuit), comme le backend. */
+const HORAIRES: [string, number, number][] = [
+  ["kine", 9 * 60, 18 * 60],
+  ["infirmi", 6 * 60 + 30, 21 * 60 + 30],
+  ["soignant", 6 * 60 + 30, 21 * 60 + 30],
+];
+const horairesDe = (u: UtilisateurMock) => HORAIRES.find(([mot]) => normaliser(u.profession ?? "").includes(mot));
 
 function calculerConflits(r: RdvMock): ConflitJSON[] {
+  if (r.statut === "annule" || r.statut === "realise") return [];
   const conflits: ConflitJSON[] = [];
-  const soignant = utilisateurs.find((u) => u.id === r.soignant_id)!;
-  const patient = utilisateurs.find((u) => u.id === r.patient_id)!;
+  const voisins = rdvs.filter((x) => x.id !== r.id && (x.statut === "planifie" || x.statut === "en_attente") && chevauche(x, r));
   const type = typesRdv.find((t) => t.id === r.type_id)!;
-  const nomPatient = `${patient.nom} ${patient.prenom}`;
 
-  // Bloquant : les kinés travaillent de 9h à 18h
-  if (/kin/i.test(soignant.profession ?? "") && (heureDe(r.debut) < 9 * 60 || heureDe(r.fin) > 18 * 60 || r.fin.slice(0, 10) !== r.debut.slice(0, 10))) {
-    conflits.push({
-      id: `k_${r.id}_horaires`, type: "HORS_HORAIRES", gravite: "bloquant",
-      message: "Les kinésithérapeutes travaillent de 9h à 18h.",
-      rdv_ids: [r.id], soignant_id: soignant.id,
-    });
+  const patient = r.patient_id == null ? undefined : utilisateurs.find((u) => u.id === r.patient_id);
+  if (patient) {
+    const nom = formatNom(patient);
+    const autres = voisins.filter((x) => x.patient_id === patient.id);
+    if (autres.length) {
+      conflits.push({
+        id: `patient-${patient.id}-double-${r.id}`, type: "PATIENT_DOUBLE_TACHE", gravite: "avertissement",
+        message: `${nom} a déjà un rendez-vous sur ce créneau.`,
+        rdv_ids: [r.id, ...autres.map((x) => x.id)], patient_id: patient.id,
+      });
+    }
+    const d = heureDe(r.debut), f = heureDe(r.fin);
+    const plageRepas = (d < 14 * 60 && f > 11 * 60) || (d < 20 * 60 && f > 18 * 60);
+    if (!normaliser(type.libelle).includes("repas") && plageRepas) {
+      conflits.push({
+        id: `patient-${patient.id}-repas-${r.id}`, type: "PLAGE_REPAS", gravite: "avertissement",
+        message: `Ce rendez-vous de ${nom} empiète sur une plage repas (11h-14h ou 18h-20h).`,
+        rdv_ids: [r.id], patient_id: patient.id,
+      });
+    }
   }
-  // Avertissement : le patient a déjà un RDV sur ce créneau
-  const autres = rdvs.filter((x) => x.id !== r.id && x.statut !== "annule" && x.patient_id === r.patient_id && chevauche(x, r));
-  if (autres.length) {
-    conflits.push({
-      id: `k_${r.id}_double`, type: "PATIENT_DOUBLE_TACHE", gravite: "avertissement",
-      message: `${nomPatient} a déjà un rendez-vous sur ce créneau.`,
-      rdv_ids: [r.id, ...autres.map((x) => x.id)], patient_id: patient.id,
-    });
-  }
-  // Avertissement : plages repas à garder libres (11h-14h, 18h-20h)
-  const d = heureDe(r.debut), f = heureDe(r.fin);
-  const plageRepas = (d < 14 * 60 && f > 11 * 60) || (d < 20 * 60 && f > 18 * 60);
-  if (type.libelle !== "Repas" && plageRepas) {
-    conflits.push({
-      id: `k_${r.id}_repas`, type: "PLAGE_REPAS", gravite: "avertissement",
-      message: "Ce rendez-vous empiète sur une plage repas (11h-14h ou 18h-20h).",
-      rdv_ids: [r.id], patient_id: patient.id,
-    });
+
+  const soignantsDuRdv = r.soignant_ids
+    .map((id) => utilisateurs.find((u) => u.id === id)!)
+    .sort((a, b) => a.nom.localeCompare(b.nom) || a.prenom.localeCompare(b.prenom));
+  for (const s of soignantsDuRdv) {
+    const nom = formatNom(s);
+    const horaires = horairesDe(s);
+    if (horaires) {
+      const [, debut, fin] = horaires;
+      if (heureDe(r.debut) < debut || heureDe(r.fin) > fin || r.fin.slice(0, 10) !== r.debut.slice(0, 10)) {
+        conflits.push({
+          id: `soignant-${s.id}-horaires-${r.id}`, type: "HORS_HORAIRES", gravite: "avertissement",
+          message: `Ce rendez-vous n'est pas compris dans les horaires habituels de ce soignant : ${nom}.`,
+          rdv_ids: [r.id], soignant_id: s.id,
+        });
+      }
+    }
+    const autres = voisins.filter((x) => x.soignant_ids.includes(s.id) && !memeSeance(x, r));
+    if (autres.length) {
+      conflits.push({
+        id: `soignant-${s.id}-double-${r.id}`, type: "SOIGNANT_DOUBLE_TACHE", gravite: "avertissement",
+        message: `${nom} a déjà un rendez-vous sur ce créneau.`,
+        rdv_ids: [r.id, ...autres.map((x) => x.id)], soignant_id: s.id,
+      });
+    }
   }
   return conflits;
 }
 
 function verifierLiens(c: Partial<RDVCreationJSON>): Reponse | null {
-  if (c.soignant_id != null && !utilisateurs.some((u) => u.id === c.soignant_id && estSoignant(u)))
-    return erreur(404, `Soignant ${c.soignant_id} introuvable.`);
+  for (const id of c.soignant_ids ?? []) {
+    if (!utilisateurs.some((u) => u.id === id && estSoignant(u))) return erreur(404, `Soignant ${id} introuvable.`);
+  }
   if (c.patient_id != null && !utilisateurs.some((u) => u.id === c.patient_id && u.role === "patient"))
     return erreur(404, `Patient ${c.patient_id} introuvable.`);
   if (c.type_id != null && !typesRdv.some((t) => t.id === c.type_id)) return erreur(404, `Type de RDV ${c.type_id} introuvable.`);
@@ -112,17 +146,21 @@ function verifierLiens(c: Partial<RDVCreationJSON>): Reponse | null {
   return null;
 }
 
-/** Enregistre si aucun conflit bloquant ; sinon 409 et rien n'est modifié. */
+const estVisite = (typeId: number | undefined) =>
+  normaliser(typesRdv.find((t) => t.id === typeId)?.libelle ?? "").startsWith("visite");
+
+/** Un patient ne gère que les visites qu'il a créées lui-même, pour lui-même. */
+const patientPeutGerer = (moi: UtilisateurMock, r: RdvMock) =>
+  r.createur_id === moi.id && r.patient_id === moi.id && estVisite(r.type_id);
+
+/** Enregistre toujours (les conflits sont des avertissements) et renvoie les conflits. */
 function enregistrer(candidat: RdvMock, creation: boolean): Reponse {
   if (candidat.fin <= candidat.debut) return erreur(422, "La fin du RDV doit être après son début.");
-  const conflits = calculerConflits(candidat);
-  const bloquants = conflits.filter((c) => c.gravite === "bloquant");
-  if (bloquants.length) {
-    return erreur(409, { code: "CONFLIT_BLOQUANT", message: bloquants[0].message, conflits: bloquants });
-  }
+  if (candidat.patient_id == null && candidat.soignant_ids.length === 0)
+    return erreur(422, "Choisissez au moins un patient ou un soignant.");
   if (creation) rdvs.push(candidat);
   else rdvs = rdvs.map((x) => (x.id === candidat.id ? candidat : x));
-  return ok({ ...rdvJSON(candidat), conflits }, creation ? 201 : 200);
+  return ok({ ...rdvJSON(candidat), conflits: calculerConflits(candidat) }, creation ? 201 : 200);
 }
 
 /* ----------------------------- Routes ----------------------------- */
@@ -194,7 +232,7 @@ function router(r: Requete): Reponse {
     const au = q.au ? String(q.au) : undefined;
     const liste = rdvs
       .filter((x) => (patientId === undefined || x.patient_id === patientId)
-        && (soignantId === undefined || x.soignant_id === soignantId)
+        && (soignantId === undefined || x.soignant_ids.includes(soignantId))
         && (!du || x.debut >= du) && (!au || x.debut < au))
       .sort((a, b) => a.debut.localeCompare(b.debut) || a.id - b.id)
       .slice(0, Number(q.limite ?? 500));
@@ -209,12 +247,25 @@ function router(r: Requete): Reponse {
       if (moi.role === "patient" && existant.patient_id !== moi.id) return erreur(403, "Ce RDV n'est pas le vôtre.");
       return ok(rdvJSON(existant));
     }
-    const refus = reserveSoignant();
-    if (refus) return refus;
+    if (methode === "POST" && m[2] === "/terminer") {
+      const refus = reserveSoignant();
+      if (refus) return refus;
+      if (existant.statut === "annule") return erreur(409, "Ce RDV est annulé, il ne peut pas être terminé.");
+      existant.statut = "realise";
+      return ok(rdvJSON(existant));
+    }
     if (methode === "PATCH" && !m[2]) {
       const changements = (r.json ?? {}) as Partial<RDVCreationJSON>;
       const lien = verifierLiens(changements);
       if (lien) return lien;
+      if (moi.role === "patient") {
+        if (!patientPeutGerer(moi, existant))
+          return erreur(403, "Vous ne pouvez modifier que les visites que vous avez ajoutées.");
+        if ("patient_id" in changements && changements.patient_id !== moi.id) return erreur(403, "Une visite reste à votre nom.");
+        if (changements.soignant_ids?.length) return erreur(403, "Une visite ajoutée par un patient n'a pas de soignant.");
+        if (changements.type_id !== undefined && !estVisite(changements.type_id))
+          return erreur(403, "Un patient ne peut ajouter que des visites.");
+      }
       const candidat: RdvMock = { ...existant };
       (Object.keys(changements) as (keyof RDVCreationJSON)[]).forEach((k) => {
         (candidat as unknown as Record<string, unknown>)[k] = changements[k];
@@ -222,26 +273,29 @@ function router(r: Requete): Reponse {
       return enregistrer(candidat, false);
     }
     if (methode === "POST" && m[2] === "/annuler") {
+      if (moi.role === "patient" && !patientPeutGerer(moi, existant))
+        return erreur(403, "Vous ne pouvez annuler que les visites que vous avez ajoutées.");
       existant.statut = "annule";
-      return ok(rdvJSON(existant));
-    }
-    if (methode === "POST" && m[2] === "/terminer") {
-      if (existant.statut === "annule") return erreur(409, "Ce RDV est annulé, il ne peut pas être terminé.");
-      existant.statut = "realise";
       return ok(rdvJSON(existant));
     }
   }
 
   if (methode === "POST" && chemin === "/rdv") {
-    const refus = reserveSoignant();
-    if (refus) return refus;
     const c = r.json as RDVCreationJSON;
     const lien = verifierLiens(c);
     if (lien) return lien;
+    let patientId = c.patient_id ?? null;
+    if (moi.role === "patient") {
+      // Un patient ne peut ajouter qu'une visite, pour lui-même, sans soignant
+      if (!estVisite(c.type_id)) return erreur(403, "Un patient ne peut ajouter que des visites.");
+      if (patientId !== null && patientId !== moi.id) return erreur(403, "Vous ne pouvez ajouter une visite que pour vous-même.");
+      if (c.soignant_ids?.length) return erreur(403, "Une visite ajoutée par un patient n'a pas de soignant.");
+      patientId = moi.id;
+    }
     const candidat: RdvMock = {
       id: prochainId++, debut: c.debut, fin: c.fin, statut: (c.statut as RdvMock["statut"]) ?? "planifie",
-      commentaire: c.commentaire ?? null, createur_id: moi.id, soignant_id: c.soignant_id,
-      patient_id: c.patient_id, type_id: c.type_id, lieu_id: c.lieu_id,
+      commentaire: c.commentaire ?? null, createur_id: moi.id, soignant_ids: [...new Set(c.soignant_ids ?? [])],
+      patient_id: patientId, type_id: c.type_id, lieu_id: c.lieu_id,
     };
     return enregistrer(candidat, true);
   }

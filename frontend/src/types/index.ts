@@ -85,8 +85,8 @@ export interface RendezVous {
   descriptif: string; // champ « commentaire » du backend
   preparation: string; // « Préparation antérieure » (voir adaptateurs.ts)
   createurId: number;
-  patient: PatientResume;
-  soignant: SoignantResume;
+  patient: PatientResume | null; // null : RDV entre soignants (staff, transmissions…)
+  soignants: SoignantResume[]; // zéro, un ou plusieurs soignants
   type: TypeRdv;
   lieu: Lieu;
 }
@@ -95,8 +95,8 @@ export interface RendezVous {
 export interface SaisieRdv {
   typeId: number;
   lieuId: number;
-  soignantId: number;
-  patientIds: number[]; // plusieurs patients = un RDV créé par patient
+  soignantIds: number[]; // zéro, un ou plusieurs soignants (tous partagent le RDV)
+  patientIds: number[]; // plusieurs patients = un RDV créé par patient ; aucun = RDV sans patient
   debut: string;
   fin: string;
   descriptif: string;
@@ -107,6 +107,7 @@ export interface SaisieRdv {
 
 export type TypeConflit =
   | "PATIENT_DOUBLE_TACHE"
+  | "SOIGNANT_DOUBLE_TACHE"
   | "SOIGNANT_DOUBLE_CHAMBRE"
   | "KINE_DOUBLE_PATIENT"
   | "HORS_HORAIRES"

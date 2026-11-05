@@ -4,16 +4,22 @@
  * Soignant(s), Patients(s), Date, Préparation antérieure.
  *
  * Le formulaire vérifie seulement que la saisie est complète et cohérente
- * (fin après début…). Les règles du planning (conflits) sont vérifiées par le backend.
+ * (fin après début, au moins un patient ou un soignant…). Les règles du
+ * planning (conflits) sont vérifiées par le backend.
+ *
+ * Mode patient : le patient ajoute ou modifie une visite pour lui-même.
+ * Nom RDV = Visite, Soignant(s) = Aucun et Patient = lui-même sont imposés ;
+ * le lieu est « Chambre du patient » par défaut et reste modifiable.
  */
-import { useId, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Chargement } from "@/components/ui/Etats";
 import { useLieux, usePatients, useSoignants, useTypesRdv } from "@/hooks/useReferentiel";
 import { couleurRdv, ORDRE_CATEGORIES } from "@/theme/couleursRdv";
-import type { RendezVous, SaisieRdv, TypeRdv } from "@/types";
+import type { PatientResume, RendezVous, SaisieRdv, TypeRdv } from "@/types";
 import { depuisIso, plageHoraire } from "@/utils/dates";
-import { SelectPatients } from "./SelectPatients";
+import { formatNom } from "@/utils/noms";
+import { SelectPersonnes } from "./SelectPersonnes";
 
 interface Props {
   mode: "creation" | "modification";
@@ -24,10 +30,40 @@ interface Props {
   onValider: (s: SaisieRdv) => Promise<boolean>;
   onSupprimer?: () => Promise<boolean>;
   onFermer: () => void;
+  /** Formulaire ouvert par un patient (visite pour lui-même). */
+  patientConnecte?: PatientResume;
 }
 
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const hhmm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+const sansAccents = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const HEURES = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
+
+/** Choix d'une heure : heures 00-23, minutes par pas de 5. */
+function ChoixHeure({ id, valeur, onChange, libelle }: { id: string; valeur: string; onChange: (v: string) => void; libelle: string }) {
+  const [h, m] = valeur ? [valeur.slice(0, 2), valeur.slice(3, 5)] : ["", ""];
+  // Un RDV existant à une minute « hors pas » (10:07) garde sa valeur
+  const minutes = m && !MINUTES.includes(m) ? [...MINUTES, m].sort() : MINUTES;
+  return (
+    <span className="inline-flex items-baseline">
+      <select id={id} aria-label={`${libelle} (heures)`} className="champ-rdv" value={h} onChange={(e) => onChange(`${e.target.value}:${m || "00"}`)}>
+        {!h && <option value="">--</option>}
+        {HEURES.map((x) => (
+          <option key={x} value={x}>{x}</option>
+        ))}
+      </select>
+      <span aria-hidden className="px-[0.1rem]">h</span>
+      <select aria-label={`${libelle} (minutes)`} className="champ-rdv" value={m} onChange={(e) => onChange(`${h || "00"}:${e.target.value}`)}>
+        {!m && <option value="">--</option>}
+        {minutes.map((x) => (
+          <option key={x} value={x}>{x}</option>
+        ))}
+      </select>
+    </span>
+  );
+}
+
 const rangType = (t: TypeRdv) => {
   const i = ORDRE_CATEGORIES.indexOf(t.categorie as (typeof ORDRE_CATEGORIES)[number]);
   return i === -1 ? 99 : i;
@@ -45,11 +81,13 @@ function Ligne({ libelle, id, idLibelle, children }: { libelle: string; id?: str
   );
 }
 
-export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer, onFermer }: Props) {
+export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer, onFermer, patientConnecte }: Props) {
+  const modePatient = patientConnecte !== undefined;
   const types = useTypesRdv();
   const lieux = useLieux();
-  const soignants = useSoignants();
-  const patients = usePatients();
+  // Un patient n'a pas accès aux listes des soignants et des patients (inutiles ici)
+  const soignants = useSoignants(!modePatient);
+  const patients = usePatients(!modePatient);
   const ids = { type: useId(), desc: useId(), debut: useId(), fin: useId(), lieu: useId(), soignant: useId(), patients: useId(), date: useId(), prep: useId() };
 
   const [typeId, setTypeId] = useState(initiale.typeId ? String(initiale.typeId) : "");
@@ -59,8 +97,8 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
   const [heureFin, setHeureFin] = useState(initiale.fin.slice(11, 16));
   const [finChoisie, setFinChoisie] = useState(mode === "modification"); // sinon : durée par défaut du type
   const [lieuId, setLieuId] = useState(initiale.lieuId ? String(initiale.lieuId) : "");
-  const [soignantId, setSoignantId] = useState(initiale.soignantId ? String(initiale.soignantId) : "");
-  const [patientIds, setPatientIds] = useState(initiale.patientIds);
+  const [soignantIds, setSoignantIds] = useState(modePatient ? [] : initiale.soignantIds);
+  const [patientIds, setPatientIds] = useState(modePatient ? [patientConnecte.id] : initiale.patientIds);
   const [preparation, setPreparation] = useState(initiale.preparation);
   const [erreurs, setErreurs] = useState<string[]>([]);
   const [envoi, setEnvoi] = useState(false);
@@ -76,8 +114,40 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
     setHeureFin(hhmm(minutes(debut) + type.dureeParDefaut));
   };
 
-  const chargement = types.isPending || lieux.isPending || soignants.isPending || patients.isPending;
-  const erreurChargement = types.isError || lieux.isError || soignants.isError || patients.isError;
+  // Mode patient : Nom RDV = Visite, lieu = Chambre du patient par défaut
+  useEffect(() => {
+    if (!modePatient) return;
+    if (!typeId && types.data) {
+      const visite = types.data.find((t) => sansAccents(t.libelle).startsWith("visite"));
+      if (visite) {
+        setTypeId(String(visite.id));
+        ajusterFin(heureDebut, visite);
+      }
+    }
+    if (!lieuId && lieux.data) {
+      const chambre = lieux.data.find((l) => sansAccents(l.libelle).includes("chambre"));
+      if (chambre) setLieuId(String(chambre.id));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modePatient, types.data, lieux.data]);
+
+  const optionsSoignants = useMemo(
+    () =>
+      [...(soignants.data ?? [])]
+        .sort((a, b) => formatNom(a).localeCompare(formatNom(b)))
+        .map((s) => ({ id: s.id, libelle: formatNom(s), detail: s.profession })),
+    [soignants.data],
+  );
+  const optionsPatients = useMemo(
+    () =>
+      [...(patients.data ?? [])]
+        .sort((a, b) => (a.chambre?.numero ?? 9999) - (b.chambre?.numero ?? 9999) || formatNom(a).localeCompare(formatNom(b)))
+        .map((p) => ({ id: p.id, libelle: formatNom(p), detail: p.chambre ? `ch. ${p.chambre.numero}` : undefined })),
+    [patients.data],
+  );
+
+  const chargement = types.isPending || lieux.isPending || (!modePatient && (soignants.isPending || patients.isPending));
+  const erreurChargement = types.isError || lieux.isError || (!modePatient && (soignants.isError || patients.isError));
 
   const valider = async () => {
     const e: string[] = [];
@@ -86,15 +156,14 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
     if (!heureDebut || !heureFin) e.push("Indiquez l'horaire.");
     else if (minutes(heureFin) <= minutes(heureDebut)) e.push("L'heure de fin doit être après l'heure de début.");
     if (!lieuId) e.push("Choisissez le lieu.");
-    if (!soignantId) e.push("Choisissez le soignant.");
-    if (!patientIds.length) e.push("Choisissez au moins un patient.");
+    if (!soignantIds.length && !patientIds.length) e.push("Choisissez au moins un patient ou un soignant.");
     setErreurs(e);
     if (e.length) return;
     setEnvoi(true);
     const ok = await onValider({
       typeId: Number(typeId),
       lieuId: Number(lieuId),
-      soignantId: Number(soignantId),
+      soignantIds,
       patientIds,
       debut: `${date}T${heureDebut}:00`,
       fin: `${date}T${heureFin}:00`,
@@ -132,7 +201,7 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
       {chargement ? (
         <Chargement texte="Chargement des listes…" />
       ) : erreurChargement ? (
-        <p role="alert" className="text-erreur">Les listes (types, lieux, soignants, patients) n'ont pas pu être chargées.</p>
+        <p role="alert" className="text-erreur">Les listes (types, lieux{modePatient ? "" : ", soignants, patients"}) n'ont pas pu être chargées.</p>
       ) : (
         <form
           noValidate
@@ -142,7 +211,10 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
           }}
           className="space-y-[0.15rem] pl-[0.9rem]"
         >
-          <Ligne libelle="Nom RDV" id={ids.type}>
+          <Ligne libelle="Nom RDV" id={modePatient ? undefined : ids.type}>
+            {modePatient ? (
+              <span className="italic text-[#333]">{typeChoisi?.libelle ?? "Visite"}</span>
+            ) : (
             <select
               id={ids.type}
               data-autofocus
@@ -161,6 +233,7 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
                 </option>
               ))}
             </select>
+            )}
           </Ligne>
 
           <Ligne libelle="Couleur RDV">
@@ -184,28 +257,23 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
           <div className="h-[1.2rem]" aria-hidden />
 
           <Ligne libelle="Horaire" id={ids.debut}>
-            <span className="flex items-baseline gap-[0.4rem]">
-              <input
+            <span className="flex items-baseline gap-[0.6rem]">
+              <ChoixHeure
                 id={ids.debut}
-                type="time"
-                step={900}
-                className="champ-rdv"
-                value={heureDebut}
-                onChange={(e) => {
-                  setHeureDebut(e.target.value);
-                  ajusterFin(e.target.value, typeChoisi);
+                libelle="Heure de début"
+                valeur={heureDebut}
+                onChange={(v) => {
+                  setHeureDebut(v);
+                  ajusterFin(v, typeChoisi);
                 }}
               />
               <span aria-hidden>-</span>
-              <input
+              <ChoixHeure
                 id={ids.fin}
-                type="time"
-                step={900}
-                aria-label="Heure de fin"
-                className="champ-rdv"
-                value={heureFin}
-                onChange={(e) => {
-                  setHeureFin(e.target.value);
+                libelle="Heure de fin"
+                valeur={heureFin}
+                onChange={(v) => {
+                  setHeureFin(v);
                   setFinChoisie(true);
                 }}
               />
@@ -223,19 +291,34 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
             </select>
           </Ligne>
 
-          <Ligne libelle="Soignant(s)" id={ids.soignant}>
-            <select id={ids.soignant} className="champ-rdv min-w-0 flex-1" value={soignantId} onChange={(e) => setSoignantId(e.target.value)}>
-              <option value="">Choisir…</option>
-              {(soignants.data ?? []).map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.prenom} {s.nom} ({s.profession})
-                </option>
-              ))}
-            </select>
+          <Ligne libelle="Soignant(s)" idLibelle={ids.soignant}>
+            {modePatient ? (
+              <span className="italic text-[#333]">Aucun</span>
+            ) : (
+              <SelectPersonnes
+                options={optionsSoignants}
+                valeur={soignantIds}
+                onChange={setSoignantIds}
+                idLibelle={ids.soignant}
+                placeholderRecherche="Rechercher un soignant ou une profession"
+                aucunTrouve="Aucun soignant trouvé."
+              />
+            )}
           </Ligne>
 
           <Ligne libelle="Patients(s)" idLibelle={ids.patients}>
-            <SelectPatients patients={patients.data ?? []} valeur={patientIds} onChange={setPatientIds} idLibelle={ids.patients} />
+            {modePatient ? (
+              <span className="italic text-[#333]">{formatNom(patientConnecte)}</span>
+            ) : (
+              <SelectPersonnes
+                options={optionsPatients}
+                valeur={patientIds}
+                onChange={setPatientIds}
+                idLibelle={ids.patients}
+                placeholderRecherche="Rechercher un nom ou une chambre"
+                aucunTrouve="Aucun patient trouvé."
+              />
+            )}
           </Ligne>
 
           <Ligne libelle="Date" id={ids.date}>

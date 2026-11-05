@@ -8,11 +8,12 @@ import { EnteteDate } from "@/components/layout/EnteteDate";
 import { useUtilisateur } from "@/hooks/useAuth";
 import { useSoignants } from "@/hooks/useReferentiel";
 import { depuisIso, jjmmaaaa } from "@/utils/dates";
+import { formatPrenom, identifiantAffiche } from "@/utils/noms";
 
 const NON_RENSEIGNE = "Non renseigné";
 const date = (iso?: string | null) => (iso ? jjmmaaaa(depuisIso(iso)) : NON_RENSEIGNE);
 
-function Section({ titre, lignes }: { titre: string; lignes: [string, string | undefined | null][] }) {
+export function Section({ titre, lignes }: { titre: string; lignes: [string, string | undefined | null][] }) {
   return (
     <section className="mt-[1.6rem] first:mt-0" aria-labelledby={`section-${titre}`}>
       <h2 id={`section-${titre}`} className="font-normal underline underline-offset-[0.2rem]">
@@ -32,13 +33,13 @@ function Section({ titre, lignes }: { titre: string; lignes: [string, string | u
 
 export function PageProfil() {
   const u = useUtilisateur();
-  // Le backend actuel ne renvoie pas la profession dans /auth/moi : on la retrouve dans la liste des soignants.
+  // Si /auth/moi ne renvoie pas la profession, on la retrouve dans la liste des soignants.
   const soignants = useSoignants(u.role === "soignant" && !u.profession);
   const profession = u.profession ?? soignants.data?.find((s) => s.id === u.id)?.profession;
 
   const identite: [string, string | undefined | null][] = [
-    ["Nom", u.nom],
-    ["Prénom", u.prenom],
+    ["Nom", u.nom.toUpperCase()],
+    ["Prénom", formatPrenom(u.prenom)],
     ...(u.role === "soignant" ? ([["Profession", profession]] as [string, string | undefined][]) : []),
     ["Date de naissance", u.dateNaissance ? date(u.dateNaissance) : undefined],
     ["Email", u.email],
@@ -54,7 +55,7 @@ export function PageProfil() {
         <Section
           titre="Identification"
           lignes={[
-            ["Identifiant", u.login],
+            ["Identifiant", identifiantAffiche(u)],
             ["Mot de passe", "••••••••"],
           ]}
         />
@@ -64,6 +65,7 @@ export function PageProfil() {
             lignes={[
               ["Chambre", u.chambre ? String(u.chambre.numero) : undefined],
               ["Date d’entrée", u.dateArrivee ? date(u.dateArrivee) : undefined],
+              ["Date de sortie prévue", u.dateDepartPrevue ? date(u.dateDepartPrevue) : undefined],
             ]}
           />
         )}

@@ -7,6 +7,7 @@ import { VueSemaine } from "@/components/planning/VueSemaine";
 import { Chargement, ListeVide } from "@/components/ui/Etats";
 import { usePatients } from "@/hooks/useReferentiel";
 import { useUtilisateur } from "@/hooks/useAuth";
+import { formatNom } from "@/utils/noms";
 
 export function PageAgendaPatient() {
   const id = Number(useParams().patientId);
@@ -15,14 +16,15 @@ export function PageAgendaPatient() {
   if (isPending) return <Chargement />;
   const p = patients?.find((x) => x.id === id);
   if (!p) return <ListeVide texte="Ce patient est introuvable." />;
-  const titre = `${p.nom} ${p.prenom}${p.chambre ? ` : ${p.chambre.numero}` : ""}`;
+  const titre = `${formatNom(p)}${p.chambre ? ` : ${p.chambre.numero}` : ""}`;
   return (
     <VueSemaine
       key={id}
       titre={titre}
+      lienTitre={`/patients/${id}/profil`}
       patientId={id}
       modifiable
-      defautsCreation={{ patientIds: [id], soignantId: moi.id }}
+      defautsCreation={{ patientIds: [id], soignantIds: [moi.id] }}
     />
   );
 }

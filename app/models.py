@@ -53,6 +53,7 @@ from sqlalchemy import (
     ForeignKey,          # Crée un lien entre deux tables
     Integer,             # Nombre entier
     String,              # Chaîne de caractères de taille limitée
+    Table,               # Table d'association (sans classe Python)
     Text,                # Texte libre
 )
 from sqlalchemy.orm import relationship
@@ -182,14 +183,10 @@ class Soignant(Utilisateur):
     # Identifie ce modèle comme un soignant
     __mapper_args__ = {"polymorphic_identity": ROLE_SOIGNANT}
 
-    # RDV dont ce soignant est l'intervenant
-    # Relation avec les rendez-vous.
-    # Un soignant peut intervenir sur plusieurs RDV.
-    # back_populates : associe cette relation à l'attribut "soignant" de la classe RDV.
-    # foreign_keys : indique quelle clé étrangère est utilisée pour réaliser l'association.
-    rdvs = relationship(
-        "RDV", back_populates="soignant", foreign_keys="RDV.soignant_id"
-    )
+    # RDV dont ce soignant est l'un des intervenants
+    # Relation plusieurs-à-plusieurs : un soignant intervient sur plusieurs RDV,
+    # et un RDV peut avoir plusieurs soignants (table d'association rdv_soignants).
+    rdvs = relationship("RDV", secondary="rdv_soignants", back_populates="soignants")
 
 
 # --------------------------------------------------------------------------
@@ -382,6 +379,20 @@ class TypeRDV(Base):
 # --------------------------------------------------------------------------
 # Rendez-vous
 # --------------------------------------------------------------------------
+# --------------------------------------------------------------------------
+# Association RDV <-> soignants
+# --------------------------------------------------------------------------
+
+# Table d'association : une ligne par couple (RDV, soignant).
+# Supprimer un RDV supprime ses lignes ici (ondelete="CASCADE").
+rdv_soignants = Table(
+    "rdv_soignants",
+    Base.metadata,
+    Column("rdv_id", Integer, ForeignKey("rdv.id", ondelete="CASCADE"), primary_key=True),
+    Column("soignant_id", Integer, ForeignKey("soignants.id"), primary_key=True, index=True),
+)
+
+
 class RDV(Base):
     """
     Représente une intervention planifiée
@@ -395,13 +406,14 @@ class RDV(Base):
 
     Il est associé à :
         - Un créateur
-        - Un soignant
-        - Un patient
+        - Zéro, un ou plusieurs soignants (table rdv_soignants)
+        - Zéro ou un patient
         - Un type d'intervention
         - Un lieu
 
-    Dans cette V1, chaque RDV est associé
-    à un seul patient et à un seul soignant.
+    Un RDV a au moins un patient ou un soignant (vérifié par l'API).
+    Un RDV de groupe (plusieurs patients) reste un RDV par patient.
+    Un RDV sans patient (ex. staff, transmissions) n'apparaît dans aucun agenda patient.
     """
     __tablename__ = "rdv"
 
@@ -432,10 +444,9 @@ class RDV(Base):
 
     # Utilisateur ayant créé le rendez-vous
     createur_id = Column(Integer, ForeignKey("utilisateurs.id"), nullable=False)
-    # Professionnel chargé de réaliser l'intervention
-    soignant_id = Column(Integer, ForeignKey("soignants.id"), nullable=False, index=True)
-    # Patient concerné par le rendez-vous
-    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=False, index=True)
+    # Patient concerné par le rendez-vous (facultatif : RDV entre soignants)
+    # Les soignants sont dans la table d'association rdv_soignants.
+    patient_id = Column(Integer, ForeignKey("patients.id"), nullable=True, index=True)
     # Type d'intervention prévu
     type_id = Column(Integer, ForeignKey("types_rdv.id"), nullable=False)
     # Lieu où se déroule l'intervention
@@ -449,8 +460,10 @@ class RDV(Base):
     # Accès à l'utilisateur créateur du rendez-vous
     # Exemple : rdv.createur.nom
     createur = relationship("Utilisateur", foreign_keys=[createur_id])
-    soignant = relationship(
-        "Soignant", back_populates="rdvs", foreign_keys=[soignant_id]
+    # Accès aux soignants qui réalisent l'intervention (liste, éventuellement vide)
+    # Exemple : [s.nom for s in rdv.soignants]
+    soignants = relationship(
+        "Soignant", secondary="rdv_soignants", back_populates="rdvs"
     )
     # Accès au patient concerné
     # Exemple : rdv.patient.nom
