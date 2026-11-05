@@ -170,6 +170,7 @@ def main():
 
         # 3. Supprimer les anciens rendez-vous fictifs.
         # La suppression reste annulable tant que l'on ne commit pas.
+        # Les liens RDV <-> soignants (rdv_soignants) partent avec (ON DELETE CASCADE).
         anciens = db.query(RDV).count()
         db.query(RDV).delete(synchronize_session=False)
         db.flush()
@@ -190,7 +191,7 @@ def main():
                 statut=STATUT_EN_ATTENTE,
                 commentaire="Demande de test générée automatiquement",
                 createur_id=createur.id,
-                soignant_id=demande["soignant"].id,
+                soignants=[demande["soignant"]],
                 patient_id=demande["patient"].id,
                 type_id=demande["type"].id,
                 lieu_id=demande["lieu"].id,

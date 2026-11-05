@@ -6,7 +6,7 @@ Les données existantes sont conservées : le soignant de chaque RDV est
 recopié dans rdv_soignants avant la suppression de la colonne soignant_id.
 
 Revision ID: 7c1e5a9b2d40
-Revises: d26df00483b8
+Revises: a41309913f4d
 Create Date: 2026-11-05 11:00:00
 
 """
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '7c1e5a9b2d40'
-down_revision: Union[str, Sequence[str], None] = 'd26df00483b8'
+down_revision: Union[str, Sequence[str], None] = 'a41309913f4d'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 

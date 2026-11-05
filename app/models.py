@@ -111,14 +111,10 @@ class Utilisateur(Base):
     # Identifiant unique de chaque utilisateur
     # primary_key=True : clé primaire de la table
     id = Column(Integer, primary_key=True)
-<<<<<<< HEAD
-    nom = Column(String(100), nullable=False) 
-=======
 
     # Informations personnelles obligatoires
     # nullable=False : le champ ne peut pas être NULL
     nom = Column(String(100), nullable=False)
->>>>>>> 744f01d20b28f569867462f91f9722d8b41d6ff7
     prenom = Column(String(100), nullable=False)
 
     # Identifiant utilisé pour se connecter
@@ -250,13 +246,10 @@ class Patient(Utilisateur):
     # La chambre est facultative : certains patients peuvent ne pas en avoir,notamment en hospitalisation de jour.
     # Nullable : un patient peut ne pas (encore) avoir de chambre (ex. hôpital de jour)
     chambre_id = Column(Integer, ForeignKey("chambres.id"), nullable=True)
-<<<<<<< HEAD
+    # Patient autonome (utilisé par la planification)
     autonome = Column(Boolean, nullable=False, default=False)
-    
-=======
 
     # Permet à SQLAlchemy d'identifier un patient
->>>>>>> 744f01d20b28f569867462f91f9722d8b41d6ff7
     __mapper_args__ = {"polymorphic_identity": ROLE_PATIENT}
 
     # Association entre un patient et sa chambre

@@ -7,15 +7,17 @@ liste des conflits est renvoyée au frontend, qui demande à l'utilisateur de
 continuer ou d'annuler (un avertissement à la fois : le patient d'abord,
 puis chaque soignant).
 
-Ce module applique des règles simples ; l'optimisation du planning avec
-OR-Tools reste à brancher (voir « Contraintes OR-Tools »).
+Ce module applique des règles simples, avec les mêmes horaires que la
+planification automatique OR-Tools (app/services/planification.py).
 
 Règles vérifiées :
     - PATIENT_DOUBLE_TACHE  : le patient a déjà un RDV qui chevauche celui-ci ;
     - PLAGE_REPAS           : un RDV d'un patient empiète sur 11h-14h ou 18h-20h ;
     - SOIGNANT_DOUBLE_TACHE : un soignant a déjà un autre RDV qui chevauche celui-ci
                               (les séances de groupe identiques ne comptent pas) ;
-    - HORS_HORAIRES         : le RDV sort des horaires habituels d'un soignant.
+    - HORS_HORAIRES         : le RDV sort des horaires habituels d'un soignant
+                              (kiné 9h-18h, sinon selon soignant.equipe, sinon
+                              selon la profession).
 """
 
 import unicodedata
@@ -25,19 +27,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app import models as m
+from app.services.planification import HORAIRES_EQUIPE, HORAIRES_KINE, est_kine
 
 # --------------------------------------------------------------------------
 # Paramètres (à adapter avec l'équipe soignante)
 # --------------------------------------------------------------------------
 
-# Horaires habituels par profession : (mot-clé dans la profession, début, fin).
-# La première ligne qui correspond s'applique. Une profession absente de la
-# liste n'a pas de contrôle d'horaires.
+# Horaires habituels : les mêmes que la planification OR-Tools
+# (app/services/planification.py : HORAIRES_KINE et HORAIRES_EQUIPE selon
+# soignant.equipe). Si l'équipe n'est pas renseignée, on applique ces valeurs
+# par profession : (mot-clé dans la profession, début, fin). Une profession
+# absente de la liste n'a pas de contrôle d'horaires.
 HORAIRES_PAR_PROFESSION = [
-    ("kine", time(9, 0), time(18, 0)),        # kinésithérapeutes : 9h-18h
     ("infirmi", time(6, 30), time(21, 30)),   # IDE : équipes matin, après-midi, journée
     ("soignant", time(6, 30), time(21, 30)),  # aides-soignants : idem (6h30-21h30 en tout)
 ]
+
+
+def _heure(minutes: int) -> time:
+    return time(minutes // 60, minutes % 60)
 
 # Plages repas à garder libres pour les patients
 PLAGES_REPAS = [(time(11, 0), time(14, 0)), (time(18, 0), time(20, 0))]
@@ -59,6 +67,11 @@ def nom_affiche(personne) -> str:
 
 def horaires_de(soignant: m.Soignant):
     """Horaires habituels (début, fin) d'un soignant, ou None si aucune règle."""
+    if est_kine(soignant):
+        return _heure(HORAIRES_KINE[0]), _heure(HORAIRES_KINE[1])
+    if soignant.equipe in HORAIRES_EQUIPE:
+        debut, fin = HORAIRES_EQUIPE[soignant.equipe]
+        return _heure(debut), _heure(fin)
     profession = _normaliser(soignant.profession)
     for mot, debut, fin in HORAIRES_PAR_PROFESSION:
         if mot in profession:
