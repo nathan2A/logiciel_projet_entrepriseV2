@@ -32,5 +32,6 @@ export function useRdvJour(jour: Date) {
     queryKey: ["rdv", { du, au }],
     queryFn: () => rdvApi.listerRdv({ du, au }),
     refetchInterval: POLLING_MS,
+    placeholderData: keepPreviousData, // pas d'écran vide en changeant de jour
   });
 }

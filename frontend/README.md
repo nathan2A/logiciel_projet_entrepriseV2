@@ -198,7 +198,9 @@ les visites qu'il a créées. `GET /auth/moi` renvoie aussi `profession`, `chamb
 - **Mon profil** : la ligne « Profession » est ajoutée pour les soignants (demandée dans le cahier des charges,
   absente de la maquette). Mot de passe toujours masqué.
 - **Unités** : Unité n = chambres de l'étage n. Une ligne par chambre, par numéro croissant ; une chambre
-  vide n'affiche que son numéro. Matin = RDV qui commencent avant 13h, après-midi à partir de 13h.
+  vide n'affiche que son numéro. Les flèches autour de la date changent de jour ; la date est surlignée
+  en vert quand c'est aujourd'hui, et un lien « Aujourd'hui » ramène au jour actuel. Le bouton
+  « Ajouter un RDV » (au-dessus de la légende) ouvre « Nouveau RDV » à la date affichée. Matin = RDV qui commencent avant 13h, après-midi à partir de 13h.
   Clic sur la chambre / le patient → son agenda ; clic sur une pastille → pop-up d'information (et
   modification pour les soignants). Seul le tableau défile : sa barre de défilement est entre le tableau
   et la légende ; le titre et la légende restent visibles. La légende reprend les 12 types de la charte.
