@@ -100,7 +100,12 @@ def main():
         )
 
         soignants = db.query(Soignant).all()
-        types = db.query(TypeRDV).order_by(TypeRDV.id).all()
+        # Les visites sont ajoutées par les patients eux-mêmes : ce ne sont pas
+        # des demandes de soin à confier aux soignants.
+        types = [
+            t for t in db.query(TypeRDV).order_by(TypeRDV.id).all()
+            if not contient(t.libelle, "visite")
+        ]
         lieux = db.query(Lieu).order_by(Lieu.id).all()
         createur = db.query(Utilisateur).first()
 
