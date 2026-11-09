@@ -85,7 +85,8 @@ export function PageUnite() {
   const lignes = useMemo(() => {
     const rdvParPatient = new Map<number, RendezVous[]>();
     (rdvJour.data ?? []).forEach((r) => {
-      if (r.patient) rdvParPatient.set(r.patient.id, [...(rdvParPatient.get(r.patient.id) ?? []), r]);
+      // Un RDV en attente n'a pas encore d'heure : il apparaîtra après « Synchroniser »
+      if (r.patient && r.statut !== "en_attente") rdvParPatient.set(r.patient.id, [...(rdvParPatient.get(r.patient.id) ?? []), r]);
     });
     return (occupation.data ?? [])
       .filter((o) => o.chambre.etage === numeroUnite)

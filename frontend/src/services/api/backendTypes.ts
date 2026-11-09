@@ -108,6 +108,23 @@ export interface RDVCreationJSON {
   lieu_id: number;
 }
 
+/** POST /planification/synchroniser (SynchronisationOut). */
+export interface SynchronisationJSON {
+  du: string;
+  au: string;
+  total_planifies: number;
+  total_restants: number;
+  jours: {
+    jour: string;
+    statut: string;
+    message: string;
+    nb_en_attente: number;
+    nb_planifies: number;
+    incoherences: { code: string; gravite: string; message: string }[];
+    ignores: { rdv_id: number; raison: string }[];
+  }[];
+}
+
 /** GET /plan : chambres, patients présents ce jour-là, séance en cours. */
 export interface PlanJSON {
   moment: string;

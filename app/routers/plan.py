@@ -19,8 +19,9 @@ from app.deps import get_db, soignant_connecte
 
 router = APIRouter(tags=["Plan du service"])
 
-# Une séance annulée ou déjà terminée ne compte pas comme « en cours »
-STATUTS_EN_COURS = (m.STATUT_PLANIFIE, m.STATUT_EN_ATTENTE)
+# Une séance annulée ou déjà terminée ne compte pas comme « en cours », ni un
+# RDV en attente (son horaire est provisoire tant que le solveur ne l'a pas placé)
+STATUTS_EN_COURS = (m.STATUT_PLANIFIE,)
 
 
 @router.get(

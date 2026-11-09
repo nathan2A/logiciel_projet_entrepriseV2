@@ -145,5 +145,6 @@ export function versCreationJSON(s: SaisieRdv, patientId: number | null): RDVCre
     patient_id: patientId,
     type_id: s.typeId,
     lieu_id: s.lieuId,
+    ...(s.statut ? { statut: s.statut } : {}),
   };
 }

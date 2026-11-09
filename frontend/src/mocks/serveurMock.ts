@@ -80,9 +80,10 @@ const HORAIRES: [string, number, number][] = [
 const horairesDe = (u: UtilisateurMock) => HORAIRES.find(([mot]) => normaliser(u.profession ?? "").includes(mot));
 
 function calculerConflits(r: RdvMock): ConflitJSON[] {
-  if (r.statut === "annule" || r.statut === "realise") return [];
+  // Seuls les RDV planifiés comptent (un RDV en attente n'a qu'un horaire provisoire)
+  if (r.statut !== "planifie") return [];
   const conflits: ConflitJSON[] = [];
-  const voisins = rdvs.filter((x) => x.id !== r.id && (x.statut === "planifie" || x.statut === "en_attente") && chevauche(x, r));
+  const voisins = rdvs.filter((x) => x.id !== r.id && x.statut === "planifie" && chevauche(x, r));
   const type = typesRdv.find((t) => t.id === r.type_id)!;
 
   const patient = r.patient_id == null ? undefined : utilisateurs.find((u) => u.id === r.patient_id);
@@ -133,6 +134,54 @@ function calculerConflits(r: RdvMock): ConflitJSON[] {
     }
   }
   return conflits;
+}
+
+/* ----------------------------- Synchronisation simulée ----------------------------- */
+// Le vrai backend utilise le solveur OR-Tools. Ici, simple placement « au plus
+// tôt » qui respecte les horaires des soignants et évite les chevauchements
+// (patient et soignants) : suffisant pour tester l'interface.
+
+const enIso = (jour: string, minutes: number) =>
+  `${jour}T${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}:00`;
+
+function synchroniserJour(jour: string) {
+  const enAttente = rdvs.filter((x) => x.statut === "en_attente" && x.debut.slice(0, 10) === jour);
+  if (!enAttente.length) {
+    return { jour, statut: "rien_a_planifier", message: "", nb_en_attente: 0, nb_planifies: 0, incoherences: [], ignores: [] };
+  }
+  const ignores: { rdv_id: number; raison: string }[] = [];
+  let planifies = 0;
+  for (const r of enAttente) {
+    const duree = heureDe(r.fin) - heureDe(r.debut);
+    const soignantsDuRdv = r.soignant_ids.map((id) => utilisateurs.find((u) => u.id === id)!);
+    const sansHoraire = soignantsDuRdv.filter((s) => !horairesDe(s));
+    if (sansHoraire.length) {
+      ignores.push({ rdv_id: r.id, raison: `Horaire inconnu pour ${sansHoraire.map((s) => formatNom(s)).join(", ")}.` });
+      continue;
+    }
+    const debutMin = Math.max(8 * 60, ...soignantsDuRdv.map((s) => horairesDe(s)![1]));
+    const finMax = Math.min(20 * 60, ...soignantsDuRdv.map((s) => horairesDe(s)![2]));
+    const occupes = rdvs.filter(
+      (x) => x.statut === "planifie" && x.debut.slice(0, 10) === jour
+        && ((r.patient_id != null && x.patient_id === r.patient_id) || x.soignant_ids.some((id) => r.soignant_ids.includes(id))),
+    );
+    let place: number | null = null;
+    for (let t = debutMin; t + duree <= finMax && place === null; t += 5) {
+      const candidat = { debut: enIso(jour, t), fin: enIso(jour, t + duree) };
+      if (!occupes.some((x) => chevauche(x, candidat))) place = t;
+    }
+    if (place === null) {
+      ignores.push({ rdv_id: r.id, raison: "Aucun créneau libre ce jour-là." });
+      continue;
+    }
+    r.debut = enIso(jour, place);
+    r.fin = enIso(jour, place + duree);
+    r.statut = "planifie";
+    planifies++;
+  }
+  return {
+    jour, statut: "optimal", message: "", nb_en_attente: enAttente.length, nb_planifies: planifies, incoherences: [], ignores,
+  };
 }
 
 function verifierLiens(c: Partial<RDVCreationJSON>): Reponse | null {
@@ -216,6 +265,26 @@ function router(r: Requete): Reponse {
       moment: r.query?.moment ?? null,
       chambres: chambres.map((c) => ({ ...c, patients: presents.filter((u) => u.chambre_id === c.id).map(resume) })),
       hors_chambre: [],
+    });
+  }
+
+  if (methode === "POST" && chemin === "/planification/synchroniser") {
+    const refus = reserveSoignant();
+    if (refus) return refus;
+    const demande = (r.json ?? {}) as { du?: string; jours?: number };
+    const du = demande.du ?? new Date().toISOString().slice(0, 10);
+    const jours = Array.from({ length: demande.jours ?? 7 }, (_, i) => {
+      const d = new Date(`${du}T12:00:00`);
+      d.setDate(d.getDate() + i);
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    });
+    const resultats = jours.map(synchroniserJour);
+    return ok({
+      du: jours[0],
+      au: jours[jours.length - 1],
+      total_planifies: resultats.reduce((n, j) => n + j.nb_planifies, 0),
+      total_restants: rdvs.filter((x) => x.statut === "en_attente" && jours.includes(x.debut.slice(0, 10))).length,
+      jours: resultats,
     });
   }
 

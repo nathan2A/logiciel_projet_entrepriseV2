@@ -231,5 +231,18 @@ export function genererRdv(): RdvMock[] {
     if (date.getDay() === 1) reunion("staff", "13:30", 30, [S.leMeur, S.quinet, S.leFur, S.jaouen], "Staff pluridisciplinaire");
     if (ouvre) reunion("transmissions", "13:00", 30, [S.madec, S.riou, S.jaouen], "Transmissions de l'équipe");
   }
+
+  // Deux RDV « en attente » aujourd'hui : pas encore d'heure, le bouton
+  // « Synchroniser » les place (horaire provisoire 08:00, seule la durée compte).
+  const present = patients.find((p) => format(aujourdhui, "yyyy-MM-dd") >= p.date_arrivee! && format(aujourdhui, "yyyy-MM-dd") <= p.date_depart_prevue!);
+  if (present) {
+    const attente = (cat: Exclude<CategorieRdv, "autre">, duree: number, soignantIds: number[], lieuId: number, commentaire: string) =>
+      rdv.push({
+        id: id++, debut: iso(aujourdhui, "08:00"), fin: iso(aujourdhui, hhmm(8 * 60 + duree)), statut: "en_attente", commentaire,
+        createur_id: S.leMeur, soignant_ids: soignantIds, patient_id: present.id, type_id: typeId(cat), lieu_id: lieuId,
+      });
+    attente("kine_chambre", 30, [S.quinet], LIEU.chambre, "À planifier : bilan articulaire");
+    attente("arthromoteur", 30, [S.riou], LIEU.chambre, "À planifier");
+  }
   return rdv;
 }

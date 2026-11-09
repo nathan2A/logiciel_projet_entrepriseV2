@@ -27,6 +27,7 @@ import { BlocOrange } from "./BlocOrange";
 import { ListeConflits } from "./ListeConflits";
 import { NavigationSemaine } from "./NavigationSemaine";
 import { PlanningSemaine } from "./PlanningSemaine";
+import { ListeEnAttente } from "./ListeEnAttente";
 
 interface Props {
   /** Texte du bloc orange de gauche, ex. « DUPONT Daniel : 101 ». */
@@ -67,7 +68,13 @@ export function VueSemaine({ titre, lienTitre, patientId, soignantId, modifiable
   const [formulaire, setFormulaire] = useState<Formulaire>(null);
   const requete = useRdvSemaine({ lundi, patientId, soignantId });
   const edition = useEditionPlanning();
-  const rdvs = requete.data ?? [];
+  // Les RDV « en attente » n'ont pas encore d'heure : ils ne vont pas dans la
+  // grille mais dans le bandeau « À planifier » (soignants uniquement).
+  const rdvs = useMemo(() => (requete.data ?? []).filter((r) => r.statut !== "en_attente"), [requete.data]);
+  const enAttente = useMemo(
+    () => (patientConnecte ? [] : (requete.data ?? []).filter((r) => r.statut === "en_attente")),
+    [requete.data, patientConnecte],
+  );
 
   // Séances : un bloc affiché par séance de groupe, la liste des patients dans le pop-up
   const { affiches, groupes } = useMemo(() => {
@@ -156,6 +163,7 @@ export function VueSemaine({ titre, lienTitre, patientId, soignantId, modifiable
           />
         )}
         <ListeConflits conflits={edition.conflits} onMasquer={edition.effacerConflits} />
+        <ListeEnAttente rdvs={enAttente} onOuvrir={setSelection} />
       </div>
 
       <section aria-label={`Planning de la semaine, ${titre}`} className="relative mt-[0.4rem] min-h-0 flex-1">

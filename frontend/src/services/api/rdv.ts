@@ -63,6 +63,7 @@ export function saisieDepuisRdv(r: RendezVous, patientIds = r.patient ? [r.patie
     fin: r.fin,
     descriptif: r.descriptif,
     preparation: r.preparation,
+    statut: r.statut,
   };
 }
 

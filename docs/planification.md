@@ -15,6 +15,14 @@ dictionnaire qu'avant (`statut`, `message`, `rdvs`, `repas`), avec en plus `inco
 `ignores`, `etapes` et `enregistre`. `planifier_journee(db, jour, enregistrer=True)` enregistre
 aussi, uniquement si une solution valide a été trouvée.
 
+**Depuis l'interface** : le bouton « Synchroniser » appelle `POST /planification/synchroniser`
+(`app/routers/synchronisation.py`). Pour aujourd'hui et les 6 jours suivants, il lance
+`PlanificateurJournee(...).planifier()` puis `enregistrer()`, jour par jour (un jour impossible
+n'empêche pas les autres). Il utilise `ignorer_rdv_sans_horaire=True` : un RDV dont un soignant n'a
+pas d'équipe renseignée est écarté et signalé, au lieu de bloquer toute la journée. Un verrou
+PostgreSQL empêche deux calculs simultanés (réponse 409). Un RDV « en_attente » n'apparaît pas dans
+la grille et ne déclenche pas d'avertissement de conflit tant qu'il n'est pas planifié.
+
 **Aucune modification de la base n'est nécessaire** : pas de nouvelle table, pas de migration,
 pas de nouvelle dépendance (`ortools` est déjà dans `requirements.txt`).
 

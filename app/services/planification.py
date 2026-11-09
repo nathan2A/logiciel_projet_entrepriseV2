@@ -263,6 +263,11 @@ class ConfigPlanification:
     # soignants) traités comme une séance de groupe : même créneau pour tous.
     regrouper_seances_en_attente: bool = False
 
+    # RDV en attente dont un soignant n'a pas d'horaire connu :
+    #   False (défaut) : statut « donnees_incompletes », rien n'est planifié ;
+    #   True : ces RDV sont écartés (listés dans `ignores`), les autres sont planifiés.
+    ignorer_rdv_sans_horaire: bool = False
+
     temps_limite_secondes: float = TEMPS_LIMITE_SECONDES
     nb_workers: int = 8
 
@@ -523,6 +528,11 @@ class PlanificateurJournee:
                 raison = f"Le patient {r.patient_id} n'est pas présent le {self.jour:%d/%m/%Y}."
             elif _tranches_haut((r.fin - r.debut).total_seconds() / 60) > HORIZON:
                 raison = "Durée supérieure à 24 heures."
+            elif self.config.ignorer_rdv_sans_horaire and any(horaires_soignant(s) is None for s in r.soignants):
+                noms = ", ".join(
+                    f"{s.prenom} {s.nom} ({s.profession})" for s in r.soignants if horaires_soignant(s) is None
+                )
+                raison = f"Horaire inconnu pour {noms} : renseigner son équipe (matin, apres_midi, jour)."
             if raison:
                 self.ignores.append({"rdv_id": r.id, "raison": raison})
             else:

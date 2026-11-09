@@ -101,6 +101,32 @@ export interface SaisieRdv {
   fin: string;
   descriptif: string;
   preparation: string;
+  /**
+   * Statut à enregistrer. « en_attente » : RDV à planifier automatiquement
+   * (seuls le jour et la durée comptent, le solveur choisit l'heure au
+   * prochain « Synchroniser »). Absent : statut inchangé (planifié à la création).
+   */
+  statut?: StatutRdv;
+}
+
+/* ---------------- Synchronisation (solveur OR-Tools) ---------------- */
+
+export interface JourSynchronise {
+  jour: string; // AAAA-MM-JJ
+  /** « rien_a_planifier », « optimal », « faisable » (enregistré) ; sinon rien n'est enregistré ce jour-là. */
+  statut: string;
+  message: string;
+  nbEnAttente: number;
+  nbPlanifies: number;
+  ignores: { rdvId: number; raison: string }[];
+}
+
+export interface ResultatSynchronisation {
+  du: string;
+  au: string;
+  totalPlanifies: number;
+  totalRestants: number;
+  jours: JourSynchronise[];
 }
 
 /* ---------------- Conflits (calculés par le backend uniquement) ---------------- */

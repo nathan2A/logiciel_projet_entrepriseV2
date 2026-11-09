@@ -169,6 +169,7 @@ def creer_rdv(
         if donnees.soignant_ids:
             raise HTTPException(status_code=403, detail="Une visite ajoutée par un patient n'a pas de soignant.")
         valeurs["patient_id"] = utilisateur.id
+        valeurs["statut"] = m.STATUT_PLANIFIE  # une visite a toujours une heure choisie
 
     if valeurs["patient_id"] is None and not valeurs["soignant_ids"]:
         raise HTTPException(
@@ -208,6 +209,7 @@ def modifier_rdv(
             raise HTTPException(status_code=403, detail="Une visite ajoutée par un patient n'a pas de soignant.")
         if "type_id" in changements and not _est_visite(db.get(m.TypeRDV, changements["type_id"])):
             raise HTTPException(status_code=403, detail="Un patient ne peut ajouter que des visites.")
+        changements.pop("statut", None)  # le statut d'une visite ne change pas par ce biais
 
     debut = changements.get("debut", rdv.debut)
     fin = changements.get("fin", rdv.fin)
