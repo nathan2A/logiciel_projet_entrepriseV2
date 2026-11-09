@@ -20,7 +20,11 @@ interface Props {
 export function RdvInfoModal({ rdv, patientsDuGroupe, onFermer, onModifier }: Props) {
   const debut = depuisIso(rdv.debut);
   const fin = depuisIso(rdv.fin);
-  const horaire = plageHoraire(debut, fin);
+  // RDV en attente : pas encore d'heure, seulement une durée
+  const horaire =
+    rdv.statut === "en_attente"
+      ? `à planifier (${Math.round((fin.getTime() - debut.getTime()) / 60000)} min)`
+      : plageHoraire(debut, fin);
   const patients = patientsDuGroupe?.length ? patientsDuGroupe : rdv.patient ? [formatNom(rdv.patient)] : [];
   const lignes: [string, string][] = [
     ["Horaire", horaire],

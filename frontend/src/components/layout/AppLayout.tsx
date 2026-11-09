@@ -1,6 +1,6 @@
 /**
  * Gabarit commun des écrans connectés : menu latéral à gauche, bouton de
- * déconnexion en haut à droite (avec « Actualiser » et la jauge de zoom à côté).
+ * déconnexion en haut à droite (avec « Synchroniser » et la jauge de zoom à côté).
  * Le zoom s'applique à la zone de travail seulement (pas au menu ni à ces boutons).
  *
  * Fonctionnement du zoom : toute l'interface est en rem, on agrandit donc la
@@ -11,11 +11,10 @@
  */
 import { useEffect, useState } from "react";
 import { Outlet, useNavigate } from "react-router-dom";
-import { useIsFetching, useQueryClient } from "@tanstack/react-query";
 import { FaPowerOff } from "react-icons/fa6";
 import { useAuth, useUtilisateur } from "@/hooks/useAuth";
 import { PopupMessage } from "@/components/ui/PopupMessage";
-import { BoutonActualiser } from "@/components/ui/Etats";
+import { BoutonSynchroniser } from "./BoutonSynchroniser";
 import { JaugeZoom, useZoom } from "./JaugeZoom";
 import { Sidebar } from "./Sidebar";
 
@@ -23,8 +22,6 @@ export function AppLayout() {
   const utilisateur = useUtilisateur();
   const { deconnexion } = useAuth();
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
-  const enChargement = useIsFetching() > 0;
   const [menuDeplie, setMenuDeplie] = useState(false);
   const [confirmerDeconnexion, setConfirmerDeconnexion] = useState(false);
   const { zoom, setZoom } = useZoom();
@@ -47,7 +44,7 @@ export function AppLayout() {
       <main className="relative min-w-0 flex-1 overflow-auto">
         <div className="fixed right-[0.7rem] top-[0.6rem] z-30 flex items-center gap-[0.4rem]" style={inverse}>
           <JaugeZoom zoom={zoom} onChange={setZoom} />
-          <BoutonActualiser enCours={enChargement} onClick={() => queryClient.invalidateQueries()} />
+          <BoutonSynchroniser lanceLeSolveur={utilisateur.role === "soignant"} />
           <button
             type="button"
             onClick={() => setConfirmerDeconnexion(true)}

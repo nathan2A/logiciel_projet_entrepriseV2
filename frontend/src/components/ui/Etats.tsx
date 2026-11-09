@@ -1,5 +1,5 @@
 /** États de chargement, d'erreur et de liste vide, réutilisés partout. */
-import { FaArrowsRotate, FaTriangleExclamation } from "react-icons/fa6";
+import { FaTriangleExclamation } from "react-icons/fa6";
 
 export function Chargement({ texte = "Chargement…" }: { texte?: string }) {
   return (
@@ -27,17 +27,3 @@ export function ListeVide({ texte }: { texte: string }) {
   return <p className="p-[1rem] text-center text-[1rem] text-[#555]">{texte}</p>;
 }
 
-/** Bouton « Actualiser » (rafraîchissement manuel, en plus du polling). */
-export function BoutonActualiser({ onClick, enCours }: { onClick: () => void; enCours: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label="Actualiser les données"
-      title="Actualiser"
-      className="grid h-[2.2rem] w-[2.2rem] place-items-center rounded-full text-[1.1rem] text-[#333] transition hover:bg-gris"
-    >
-      <FaArrowsRotate aria-hidden className={enCours ? "animate-spin" : ""} />
-    </button>
-  );
-}

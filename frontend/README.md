@@ -124,8 +124,10 @@ Pour brancher un autre backend, seuls `services/api/` (et éventuellement `mocks
 | GET | `/types-rdv` | — | `TypeRDVOut[]` | Liste « Nom RDV », couleurs |
 | GET | `/lieux` | — | `LieuOut[]` | Liste « Lieu » |
 | GET | `/plan` | `?moment=` | `PlanOut` | Unités : toutes les chambres et leurs patients présents |
+| POST | `/planification/synchroniser` | `{ du, jours }` | `SynchronisationOut` | Bouton « Synchroniser » : solveur OR-Tools sur 7 jours |
 
-Les RDV au statut `annule` ne sont pas affichés.
+Les RDV au statut `annule` ne sont pas affichés. Les RDV `en_attente` (sans heure choisie) ne sont pas
+dans la grille : ils sont listés dans le bandeau « À planifier » au-dessus du planning.
 
 Format d'un RDV (novembre 2026) : un RDV a **zéro, un ou plusieurs soignants** (`soignants: [...]`,
 `soignant_ids: [...]` à la création) et **zéro ou un patient** (`patient` / `patient_id` peut valoir `null`),
@@ -193,7 +195,17 @@ les visites qu'il a créées. `GET /auth/moi` renvoie aussi `profession`, `chamb
   en pop-up d'erreur, blocs entourés en rouge.)
 - **Succès** : pop-up « Action réalisée ! » après chaque création, modification, déplacement
   ou suppression (il se ferme seul après 3 secondes).
-- **Rafraîchissement** : automatique toutes les 30 s, et bouton « Actualiser » à côté du bouton de déconnexion.
+- **Rafraîchissement** : automatique toutes les 30 s.
+- **Bouton « Synchroniser »** (rond, à côté du bouton de déconnexion) :
+  - pour un soignant, il relance le solveur OR-Tools côté backend pour aujourd'hui et les 6 jours suivants.
+    Les RDV « à planifier » reçoivent une heure et sont enregistrés ; les RDV déjà planifiés ne bougent pas.
+    Ensuite tout est relu depuis la base, et un bilan s'affiche (nombre de RDV planifiés, RDV écartés et
+    pourquoi, jours impossibles). Pendant le calcul : « Planification en cours… » et bouton désactivé ;
+    un double clic ne lance qu'un calcul, et le backend refuse un second calcul simultané (409) ;
+  - pour un patient, il recharge seulement les données.
+- **« À planifier automatiquement »** (case du formulaire, soignants) : le RDV est créé « en attente »
+  avec un jour et une durée ; le solveur choisit l'heure au prochain « Synchroniser ». Décocher la case
+  lui redonne un horaire fixe. En mode mock, le placement est simulé (au plus tôt, sans OR-Tools).
   Si le backend ne répond plus, les dernières données restent affichées avec un bandeau d'alerte.
 - **Mon profil** : la ligne « Profession » est ajoutée pour les soignants (demandée dans le cahier des charges,
   absente de la maquette). Mot de passe toujours masqué.

@@ -50,7 +50,9 @@ def _heure(minutes: int) -> time:
 # Plages repas à garder libres pour les patients
 PLAGES_REPAS = [(time(11, 0), time(14, 0)), (time(18, 0), time(20, 0))]
 
-STATUTS_ACTIFS = (m.STATUT_PLANIFIE, m.STATUT_EN_ATTENTE)
+# Seuls les RDV planifiés comptent : un RDV « en_attente » n'a qu'un horaire
+# provisoire, c'est le solveur (bouton « Synchroniser ») qui choisira son heure.
+STATUTS_ACTIFS = (m.STATUT_PLANIFIE,)
 
 
 def _normaliser(texte: str) -> str:
