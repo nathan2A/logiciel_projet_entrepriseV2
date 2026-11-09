@@ -146,7 +146,7 @@ def supprimer_utilisateur(
         .where(
             or_(
                 m.RDV.patient_id == compte.id,
-                m.RDV.soignant_id == compte.id,
+                m.RDV.soignants.any(m.Soignant.id == compte.id),
                 m.RDV.createur_id == compte.id,
             )
         )

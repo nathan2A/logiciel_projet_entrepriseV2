@@ -4,8 +4,9 @@
  *  - rechargement des données après chaque action ;
  *  - pop-up « Action réalisée ! » en cas de succès ;
  *  - conflit bloquant (HTTP 409) ou erreur : rien n'est modifié, message d'erreur ;
- *  - conflit d'avertissement : l'action est enregistrée, l'utilisateur choisit
- *    de la conserver ou de revenir en arrière.
+ *  - conflits d'avertissement : l'action est enregistrée, puis chaque conflit
+ *    est présenté à son tour (patient d'abord, puis chaque soignant) ;
+ *    l'utilisateur continue, ou annule tout le changement.
  * Les conflits viennent toujours du backend ; ils sont seulement affichés ici.
  */
 import { useCallback, useMemo, useState } from "react";
@@ -30,7 +31,8 @@ export function messagesUniques(conflits: Conflit[]): Conflit[] {
 }
 
 export interface AvertissementEnAttente {
-  conflits: Conflit[];
+  conflits: Conflit[]; // dans l'ordre de présentation
+  index: number; // conflit affiché
   defaire: () => Promise<void>;
 }
 
@@ -55,7 +57,7 @@ export function useEditionPlanning() {
         await recharger();
         const avertissements = res.conflits.filter((c) => c.gravite === "avertissement");
         setConflits(res.conflits);
-        if (avertissements.length) setAvertissement({ conflits: messagesUniques(avertissements), defaire: res.defaire });
+        if (avertissements.length) setAvertissement({ conflits: messagesUniques(avertissements), index: 0, defaire: res.defaire });
         else succes();
         return true;
       } catch (e) {
@@ -75,11 +77,16 @@ export function useEditionPlanning() {
     [recharger, erreur, succes],
   );
 
-  /** L'utilisateur conserve l'action malgré l'avertissement. */
-  const conserver = useCallback(() => {
+  /** L'utilisateur continue : conflit suivant, ou action conservée après le dernier. */
+  const continuer = useCallback(() => {
+    const a = avertissement;
+    if (a && a.index + 1 < a.conflits.length) {
+      setAvertissement({ ...a, index: a.index + 1 });
+      return;
+    }
     setAvertissement(null);
     succes();
-  }, [succes]);
+  }, [avertissement, succes]);
 
   /** L'utilisateur renonce : retour à l'état d'avant l'action. */
   const renoncer = useCallback(async () => {
@@ -114,7 +121,7 @@ export function useEditionPlanning() {
     effacerConflits: () => setConflits([]),
     graviteParRdv,
     avertissement,
-    conserver,
+    continuer,
     renoncer,
   };
 }

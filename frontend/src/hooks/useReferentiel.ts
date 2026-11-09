@@ -1,5 +1,5 @@
 /** Listes de référence (changent rarement : cache long). */
-import { useQuery } from "@tanstack/react-query";
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { planApi, POLLING_MS, referentielApi } from "@/services/api";
 
 const LONG = 5 * 60_000;
@@ -18,4 +18,9 @@ export const useSoignants = (actif = true) =>
 
 /** Chambres et patients présents un jour donné (« 2026-10-22 »). */
 export const useOccupation = (jour: string) =>
-  useQuery({ queryKey: ["plan", jour], queryFn: () => planApi.occupationDuJour(jour), refetchInterval: POLLING_MS });
+  useQuery({
+    queryKey: ["plan", jour],
+    queryFn: () => planApi.occupationDuJour(jour),
+    refetchInterval: POLLING_MS,
+    placeholderData: keepPreviousData, // pas d'écran vide en changeant de jour
+  });

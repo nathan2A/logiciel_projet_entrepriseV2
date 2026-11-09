@@ -7,28 +7,26 @@ import { Modal } from "@/components/ui/Modal";
 import { couleurRdv } from "@/theme/couleursRdv";
 import type { RendezVous } from "@/types";
 import { depuisIso, jourCourtEtDate, plageHoraire } from "@/utils/dates";
+import { formatNom, formatNoms } from "@/utils/noms";
 
 interface Props {
   rdv: RendezVous;
-  /** Autres patients du même RDV de groupe (même horaire, type, lieu, soignant). */
+  /** Patients du même RDV de groupe (même horaire, type, lieu, soignants). */
   patientsDuGroupe?: string[];
   onFermer: () => void;
   onModifier?: () => void;
 }
 
-const nomComplet = (p: { nom: string; prenom: string }) =>
-  `${p.nom.charAt(0)}${p.nom.slice(1).toLowerCase()} ${p.prenom}`;
-
 export function RdvInfoModal({ rdv, patientsDuGroupe, onFermer, onModifier }: Props) {
   const debut = depuisIso(rdv.debut);
   const fin = depuisIso(rdv.fin);
   const horaire = plageHoraire(debut, fin);
-  const patients = patientsDuGroupe?.length ? patientsDuGroupe : [nomComplet(rdv.patient)];
+  const patients = patientsDuGroupe?.length ? patientsDuGroupe : rdv.patient ? [formatNom(rdv.patient)] : [];
   const lignes: [string, string][] = [
     ["Horaire", horaire],
     ["Lieu", rdv.lieu.libelle],
-    ["Soignant(s)", `${rdv.soignant.prenom} ${rdv.soignant.nom} (${rdv.soignant.profession})`],
-    ["Patients(s)", patients.join(", ")],
+    ["Soignant(s)", rdv.soignants.length ? rdv.soignants.map((s) => `${formatNom(s)} (${s.profession})`).join(", ") : "Aucun"],
+    ["Patients(s)", patients.length ? patients.join(", ") : formatNoms([])],
     ["Date", jourCourtEtDate(debut)],
     ["Préparation antérieure", rdv.preparation || "Aucune"],
   ];

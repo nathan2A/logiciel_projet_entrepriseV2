@@ -91,6 +91,7 @@ def main():
     with Session(engine) as session:
         # 1) On vide, dans l'ordre inverse des dépendances (les RDV d'abord)
         for table in (
+            m.rdv_soignants,
             m.RDV.__table__,
             m.Patient.__table__,
             m.Soignant.__table__,
@@ -184,8 +185,18 @@ def main():
                     statut=r["statut"],
                     commentaire=r["commentaire"],
                     createur_id=trouver(soignants, r["createur_login"], "RDV", ligne, "createur_login").id,
-                    soignant_id=trouver(soignants, r["soignant_login"], "RDV", ligne, "soignant_login").id,
-                    patient_id=trouver(patients, r["patient_login"], "RDV", ligne, "patient_login").id,
+                    # Plusieurs soignants possibles, séparés par « ; » (case vide = aucun soignant)
+                    soignants=[
+                        trouver(soignants, login.strip(), "RDV", ligne, "soignant_login")
+                        for login in str(r["soignant_login"] or "").split(";")
+                        if login.strip()
+                    ],
+                    # Patient facultatif (case vide = RDV sans patient)
+                    patient_id=(
+                        trouver(patients, r["patient_login"], "RDV", ligne, "patient_login").id
+                        if r["patient_login"] not in (None, "")
+                        else None
+                    ),
                     type_id=trouver(types, r["type"], "RDV", ligne, "type").id,
                     lieu_id=trouver(lieux, r["lieu"], "RDV", ligne, "lieu").id,
                 )

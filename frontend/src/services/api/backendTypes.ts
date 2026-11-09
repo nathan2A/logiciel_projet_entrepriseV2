@@ -52,8 +52,8 @@ export interface SoignantJSON extends SoignantResumeJSON {
 }
 
 /**
- * GET /auth/moi. Le backend actuel ne renvoie que id, login, nom, prenom, role.
- * Les autres champs sont attendus en complément (voir README, « Ajouts backend »).
+ * GET /auth/moi. Le backend renvoie aussi la profession (soignant), la chambre
+ * et les dates de séjour (patient). Les autres champs restent facultatifs.
  */
 export interface MoiJSON {
   id: number;
@@ -70,7 +70,7 @@ export interface MoiJSON {
   telephone?: string | null;
 }
 
-/** Conflit (extension proposée au backend, déjà renvoyée par les mocks). */
+/** Conflit renvoyé par le backend après une création ou une modification (app/conflits.py). */
 export interface ConflitJSON {
   id: string;
   type: string;
@@ -88,11 +88,11 @@ export interface RDVJSON {
   statut: string;
   commentaire: string | null;
   createur_id: number;
-  patient: PatientResumeJSON;
-  soignant: SoignantResumeJSON;
+  patient: PatientResumeJSON | null;
+  soignants: SoignantResumeJSON[];
   type: TypeRDVJSON;
   lieu: LieuJSON;
-  /** Extension proposée : conflits concernant ce RDV après création/modification. */
+  /** Conflits concernant ce RDV, renvoyés après une création ou une modification. */
   conflits?: ConflitJSON[];
 }
 
@@ -102,8 +102,8 @@ export interface RDVCreationJSON {
   fin: string;
   statut?: string;
   commentaire?: string | null;
-  soignant_id: number;
-  patient_id: number;
+  soignant_ids: number[];
+  patient_id: number | null;
   type_id: number;
   lieu_id: number;
 }
