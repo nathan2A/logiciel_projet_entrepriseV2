@@ -39,9 +39,14 @@ def plan_du_service(
     en_cours = db.scalars(
         select(m.RDV)
         .options(
-            joinedload(m.RDV.soignant), joinedload(m.RDV.type), joinedload(m.RDV.lieu)
+            selectinload(m.RDV.soignants), joinedload(m.RDV.type), joinedload(m.RDV.lieu)
         )
-        .where(m.RDV.debut <= moment, m.RDV.fin > moment, m.RDV.statut.in_(STATUTS_EN_COURS))
+        .where(
+            m.RDV.debut <= moment,
+            m.RDV.fin > moment,
+            m.RDV.statut.in_(STATUTS_EN_COURS),
+            m.RDV.patient_id.is_not(None),  # un RDV sans patient ne place personne
+        )
         .order_by(m.RDV.debut, m.RDV.id)
     ).all()
     rdv_par_patient = {}

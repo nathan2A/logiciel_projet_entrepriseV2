@@ -12,6 +12,7 @@ import { BandeauHorsLigne, Chargement, ListeVide } from "@/components/ui/Etats";
 import { usePatients } from "@/hooks/useReferentiel";
 import type { Patient } from "@/types";
 import { depuisIso, jjmmaaaa } from "@/utils/dates";
+import { formatNom } from "@/utils/noms";
 
 const normaliser = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -23,7 +24,7 @@ function CartePatient({ p, present }: { p: Patient; present: boolean }) {
         className="flex min-h-[3.4rem] flex-col items-center justify-center rounded-charte bg-orange px-[0.8rem] py-[0.4rem] text-center transition hover:brightness-95"
       >
         <span className="text-[1.15rem] font-bold leading-tight">
-          {p.nom} {p.prenom}
+          {formatNom(p)}
           {p.chambre ? ` : ${p.chambre.numero}` : ""}
         </span>
         {!present && (

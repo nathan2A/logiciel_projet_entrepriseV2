@@ -14,7 +14,8 @@
  * agrandit aussi tout, ce qui sert de réglage de taille de police côté patient.
  */
 html {
-  font-size: clamp(14px, 0.9vw, 24px);
+  /* --zoom : jauge de zoom de l'application (components/layout/JaugeZoom.tsx) */
+  font-size: calc(clamp(14px, 0.9vw, 24px) * var(--zoom, 1));
 }
 
 body {

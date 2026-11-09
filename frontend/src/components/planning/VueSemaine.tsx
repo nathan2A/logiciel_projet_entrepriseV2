@@ -5,8 +5,11 @@
  *
  * Si `modifiable` (soignants) : création, modification, suppression et
  * glisser-déposer. Chaque action part au backend ; seule sa réponse fait foi.
+ * Si `patientConnecte` (patient) : il ajoute des visites pour lui-même, et
+ * modifie ou supprime seulement les visites qu'il a ajoutées.
  */
 import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { addDays, format, isWithinInterval } from "date-fns";
 import { EnteteDate } from "@/components/layout/EnteteDate";
 import { BandeauHorsLigne, Chargement } from "@/components/ui/Etats";
@@ -17,8 +20,9 @@ import { useEditionPlanning } from "@/hooks/useEditionPlanning";
 import { useRdvSemaine } from "@/hooks/useRdv";
 import { rdvApi } from "@/services/api";
 import { saisieDepuisRdv } from "@/services/api/rdv";
-import type { RendezVous, SaisieRdv } from "@/types";
+import type { PatientResume, RendezVous, SaisieRdv } from "@/types";
 import { lundiDe } from "@/utils/dates";
+import { formatNom } from "@/utils/noms";
 import { BlocOrange } from "./BlocOrange";
 import { ListeConflits } from "./ListeConflits";
 import { NavigationSemaine } from "./NavigationSemaine";
@@ -27,14 +31,18 @@ import { PlanningSemaine } from "./PlanningSemaine";
 interface Props {
   /** Texte du bloc orange de gauche, ex. « DUPONT Daniel : 101 ». */
   titre: string;
+  /** Page ouverte en cliquant sur le bloc du nom (profil ou fiche patient). */
+  lienTitre?: string;
   patientId?: number;
   soignantId?: number;
   /** Création / modification / suppression / glisser-déposer autorisés (soignants). */
   modifiable: boolean;
   /** Valeurs pré-remplies du pop-up « Nouveau RDV ». */
-  defautsCreation?: { soignantId?: number; patientIds?: number[] };
+  defautsCreation?: { soignantIds?: number[]; patientIds?: number[] };
+  /** Agenda vu par le patient lui-même : il peut ajouter ses visites. */
+  patientConnecte?: PatientResume;
   /**
-   * Regroupe les RDV identiques (même horaire, type, lieu et soignant) en un
+   * Regroupe les RDV identiques (même horaire, type, lieu et soignants) en un
    * seul bloc : séances de groupe côté soignant.
    */
   regrouperSeances?: boolean;
@@ -45,10 +53,15 @@ type Formulaire =
   | { mode: "modification"; initiale: SaisieRdv; seance: RendezVous[] }
   | null;
 
-const cleSeance = (r: RendezVous) => `${r.debut}|${r.fin}|${r.type.id}|${r.lieu.id}|${r.soignant.id}`;
-const nomPatient = (r: RendezVous) => `${r.patient.nom.charAt(0)}${r.patient.nom.slice(1).toLowerCase()} ${r.patient.prenom}`;
+const cleSeance = (r: RendezVous) =>
+  `${r.debut}|${r.fin}|${r.type.id}|${r.lieu.id}|${r.soignants.map((s) => s.id).sort((a, b) => a - b).join(",")}`;
 
-export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCreation, regrouperSeances }: Props) {
+/** Une visite que ce patient a ajoutée lui-même : il peut la modifier ou la supprimer. */
+const visiteDuPatient = (r: RendezVous, p: PatientResume) =>
+  r.type.categorie === "visite" && r.createurId === p.id && r.patient?.id === p.id;
+
+export function VueSemaine({ titre, lienTitre, patientId, soignantId, modifiable, defautsCreation, patientConnecte, regrouperSeances }: Props) {
+  const navigate = useNavigate();
   const [lundi, setLundi] = useState(() => lundiDe(new Date()));
   const [selection, setSelection] = useState<RendezVous | null>(null);
   const [formulaire, setFormulaire] = useState<Formulaire>(null);
@@ -86,7 +99,7 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
   /* ------------------------------ Actions ------------------------------ */
 
   const ouvrirCreation = () => {
-    if (!modifiable) return; // V1 : sans effet pour le patient
+    if (!modifiable && !patientConnecte) return;
     const aujourdhui = new Date();
     const jour = isWithinInterval(aujourdhui, { start: lundi, end: addDays(lundi, 7) }) ? aujourdhui : lundi;
     const d = format(jour, "yyyy-MM-dd");
@@ -95,7 +108,7 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
       initiale: {
         typeId: 0,
         lieuId: 0,
-        soignantId: defautsCreation?.soignantId ?? 0,
+        soignantIds: defautsCreation?.soignantIds ?? [],
         patientIds: defautsCreation?.patientIds ?? [],
         debut: `${d}T09:00:00`,
         fin: `${d}T09:30:00`,
@@ -107,7 +120,7 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
 
   const ouvrirModification = (r: RendezVous) => {
     const seance = seanceDe(r);
-    setFormulaire({ mode: "modification", seance, initiale: saisieDepuisRdv(r, seance.map((x) => x.patient.id)) });
+    setFormulaire({ mode: "modification", seance, initiale: saisieDepuisRdv(r, seance.flatMap((x) => (x.patient ? [x.patient.id] : []))) });
   };
 
   const deplacer = async (r: RendezVous, debut: string, fin: string, revenir: () => void) => {
@@ -117,13 +130,16 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
   };
 
   const groupeSelection = selection && regrouperSeances ? groupes.get(cleSeance(selection)) : undefined;
+  const peutModifier = (r: RendezVous) => modifiable || (patientConnecte !== undefined && visiteDuPatient(r, patientConnecte));
 
   return (
     <div className="flex h-full min-h-[38rem] flex-col px-[2.2rem] pb-[1rem]">
       <EnteteDate />
 
       <div className="mx-auto mt-[0.5rem] grid w-full max-w-[64rem] grid-cols-2 gap-x-[5rem] px-[3.5rem]">
-        <BlocOrange>{titre}</BlocOrange>
+        <BlocOrange onClick={lienTitre ? () => navigate(lienTitre) : undefined} titreBulle={lienTitre ? "Voir la fiche" : undefined}>
+          {titre}
+        </BlocOrange>
         <BlocOrange onClick={ouvrirCreation}>Ajouter un RDV</BlocOrange>
       </div>
 
@@ -162,11 +178,6 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
                 <Chargement texte="Chargement du planning…" />
               </div>
             )}
-            {requete.isSuccess && rdvs.length === 0 && (
-              <p className="pointer-events-none absolute inset-x-0 top-1/2 text-center text-[1.1rem] text-[#444]">
-                Aucun rendez-vous cette semaine.
-              </p>
-            )}
           </>
         )}
       </section>
@@ -174,10 +185,10 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
       {selection && (
         <RdvInfoModal
           rdv={selection}
-          patientsDuGroupe={groupeSelection?.map(nomPatient)}
+          patientsDuGroupe={groupeSelection?.flatMap((x) => (x.patient ? [formatNom(x.patient)] : []))}
           onFermer={() => setSelection(null)}
           onModifier={
-            modifiable
+            peutModifier(selection)
               ? () => {
                   setSelection(null);
                   ouvrirModification(selection);
@@ -191,6 +202,7 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
         <RdvFormModal
           mode="creation"
           initiale={formulaire.initiale}
+          patientConnecte={patientConnecte}
           onFermer={() => setFormulaire(null)}
           onValider={(s) => edition.lancer(() => rdvApi.creerSeance(s))}
         />
@@ -201,6 +213,7 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
           mode="modification"
           initiale={formulaire.initiale}
           original={formulaire.seance[0]}
+          patientConnecte={patientConnecte}
           onFermer={() => setFormulaire(null)}
           onValider={(s) => edition.lancer(() => rdvApi.modifierSeance(formulaire.seance, s), ids(formulaire.seance))}
           onSupprimer={() => edition.lancer(() => rdvApi.supprimerSeance(formulaire.seance), ids(formulaire.seance))}
@@ -209,8 +222,11 @@ export function VueSemaine({ titre, patientId, soignantId, modifiable, defautsCr
 
       {edition.avertissement && (
         <AvertissementModal
-          conflits={edition.avertissement.conflits}
-          onConserver={edition.conserver}
+          key={edition.avertissement.index}
+          conflit={edition.avertissement.conflits[edition.avertissement.index]}
+          position={edition.avertissement.index + 1}
+          total={edition.avertissement.conflits.length}
+          onContinuer={edition.continuer}
           onRenoncer={edition.renoncer}
         />
       )}

@@ -6,7 +6,9 @@
  * appels nécessaires et sait revenir en arrière.
  *
  * Une « séance » = un ou plusieurs RDV identiques (même horaire, type, lieu,
- * soignant), un par patient, car le backend n'accepte qu'un patient par RDV.
+ * soignants), un par patient, car le backend n'accepte qu'un patient par RDV.
+ * Un RDV peut avoir plusieurs soignants : il apparaît dans l'agenda de chacun.
+ * Une séance sans patient (réunion entre soignants, par exemple) = un seul RDV.
  * Chaque opération sur une séance :
  *  - en cas d'échec en cours de route, annule ce qui a déjà été fait puis
  *    remonte l'erreur (la séance revient exactement à son état d'origine) ;
@@ -51,11 +53,11 @@ const patcher = (id: number, corps: Partial<RDVCreationJSON>) =>
 const annuler = (id: number) => appeler<RDVJSON>({ methode: "POST", chemin: `/rdv/${id}/annuler` });
 
 /** Saisie équivalente à un RDV existant (pour pouvoir le remettre à l'identique). */
-export function saisieDepuisRdv(r: RendezVous, patientIds = [r.patient.id]): SaisieRdv {
+export function saisieDepuisRdv(r: RendezVous, patientIds = r.patient ? [r.patient.id] : []): SaisieRdv {
   return {
     typeId: r.type.id,
     lieuId: r.lieu.id,
-    soignantId: r.soignant.id,
+    soignantIds: r.soignants.map((s) => s.id),
     patientIds,
     debut: r.debut,
     fin: r.fin,
@@ -85,17 +87,27 @@ async function executer(etapes: Etape[]): Promise<ResultatAction> {
     await toutDefaire();
     throw err;
   }
-  const conflits = new Map<string, Conflit>();
-  reponses.forEach((r) => (r.conflits ?? []).forEach((c) => conflits.set(c.id, versConflit(c))));
   return {
     rdvs: reponses.filter((r) => r.statut !== "annule").map(versRendezVous),
-    conflits: [...conflits.values()],
+    conflits: ordonnerConflits(reponses.flatMap((r) => (r.conflits ?? []).map(versConflit))),
     defaire: toutDefaire,
   };
 }
 
-/** Étape « créer un RDV pour ce patient » ; son retour arrière l'annule. */
-function etapeCreation(s: SaisieRdv, patientId: number): Etape {
+/**
+ * Conflits d'une action, dans l'ordre où ils sont présentés à l'utilisateur :
+ * d'abord ceux des patients, puis ceux des soignants. Un même message n'apparaît
+ * qu'une fois (une séance de groupe produit le même avertissement par patient).
+ */
+export function ordonnerConflits(conflits: Conflit[]): Conflit[] {
+  const vus = new Set<string>();
+  const uniques = conflits.filter((c) => !vus.has(c.message) && vus.add(c.message));
+  const concernePatient = (c: Conflit) => c.patientId !== undefined && c.soignantId === undefined;
+  return [...uniques.filter(concernePatient), ...uniques.filter((c) => !concernePatient(c))];
+}
+
+/** Étape « créer un RDV pour ce patient (ou sans patient) » ; son retour arrière l'annule. */
+function etapeCreation(s: SaisieRdv, patientId: number | null): Etape {
   let id: number | null = null;
   return {
     faire: async () => {
@@ -111,7 +123,7 @@ function etapeCreation(s: SaisieRdv, patientId: number): Etape {
 function etapeModification(original: RendezVous, corps: Partial<RDVCreationJSON>): Etape {
   return {
     faire: () => patcher(original.id, corps),
-    defaire: () => patcher(original.id, versCreationJSON(saisieDepuisRdv(original), original.patient.id)),
+    defaire: () => patcher(original.id, versCreationJSON(saisieDepuisRdv(original), original.patient?.id ?? null)),
   };
 }
 
@@ -128,9 +140,13 @@ function etapeAnnulation(original: RendezVous): Etape {
 
 /* ----------------------------- Opérations sur une séance ----------------------------- */
 
-/** Nouveau RDV : un RDV par patient choisi. */
+/** Patients ciblés par une saisie : un RDV par patient, ou un seul RDV sans patient. */
+const ciblesDe = (s: SaisieRdv): (number | null)[] => (s.patientIds.length ? s.patientIds : [null]);
+const patientDe = (r: RendezVous) => r.patient?.id ?? null;
+
+/** Nouveau RDV : un RDV par patient choisi (un seul RDV si aucun patient). */
 export function creerSeance(s: SaisieRdv): Promise<ResultatAction> {
-  return executer(s.patientIds.map((p) => etapeCreation(s, p)));
+  return executer(ciblesDe(s).map((p) => etapeCreation(s, p)));
 }
 
 /**
@@ -138,11 +154,12 @@ export function creerSeance(s: SaisieRdv): Promise<ResultatAction> {
  * ceux des patients retirés sont annulés, les patients ajoutés reçoivent un RDV.
  */
 export function modifierSeance(existants: RendezVous[], s: SaisieRdv): Promise<ResultatAction> {
-  const gardes = existants.filter((r) => s.patientIds.includes(r.patient.id));
-  const retires = existants.filter((r) => !s.patientIds.includes(r.patient.id));
-  const ajoutes = s.patientIds.filter((p) => !existants.some((r) => r.patient.id === p));
+  const cibles = ciblesDe(s);
+  const gardes = existants.filter((r) => cibles.includes(patientDe(r)));
+  const retires = existants.filter((r) => !cibles.includes(patientDe(r)));
+  const ajoutes = cibles.filter((p) => !existants.some((r) => patientDe(r) === p));
   return executer([
-    ...gardes.map((r) => etapeModification(r, versCreationJSON(s, r.patient.id))),
+    ...gardes.map((r) => etapeModification(r, versCreationJSON(s, patientDe(r)))),
     ...ajoutes.map((p) => etapeCreation(s, p)),
     ...retires.map(etapeAnnulation),
   ]);

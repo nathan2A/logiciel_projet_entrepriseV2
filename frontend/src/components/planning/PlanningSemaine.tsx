@@ -2,7 +2,7 @@
  * Planning de la semaine (maquettes 05-07) construit avec FullCalendar
  * (vue timeGridWeek) et habillé pour reproduire la maquette :
  * 7 colonnes grises arrondies, jour actuel en vert, en-têtes « LUN.12 »,
- * blocs de RDV arrondis à la couleur de leur type, plages repas visibles.
+ * blocs de RDV arrondis à la couleur de leur type.
  *
  * Ce composant ne fait qu'afficher : il remonte les clics (et, pour les
  * soignants, les déplacements) au parent, qui appelle le backend.
@@ -31,15 +31,9 @@ interface Props {
   heureFin?: string;
 }
 
-/** Plages repas à garder libres : déjeuner 11h-14h, dîner 18h-20h (affichage seul). */
-const PLAGES_REPAS: EventInput[] = [
-  { daysOfWeek: [0, 1, 2, 3, 4, 5, 6], startTime: "11:00", endTime: "14:00", display: "background", classNames: ["plage-repas"] },
-  { daysOfWeek: [0, 1, 2, 3, 4, 5, 6], startTime: "18:00", endTime: "20:00", display: "background", classNames: ["plage-repas"] },
-];
-
 function ContenuRdv({ event }: EventContentArg) {
   const rdv = event.extendedProps.rdv as RendezVous | undefined;
-  if (!rdv) return null; // plages repas (fond) : rien à écrire
+  if (!rdv) return null;
   const debut = event.start!;
   const fin = event.end ?? debut;
   // RDV courts (≤ 35 min) : une seule ligne « Titre 8h », pour ne pas déborder sur le suivant
@@ -133,13 +127,13 @@ export function PlanningSemaine({
         slotMinTime={`${heureDebut}:00`}
         slotMaxTime={`${heureFin}:00`}
         slotDuration="00:30:00"
-        snapDuration="00:15:00"
+        snapDuration="00:05:00"
         slotEventOverlap={false}
         eventMinHeight={hauteurMin}
         eventShortHeight={hauteurMin}
         dayHeaderContent={(a) => enteteJour(a.date)}
         slotLabelContent={() => null}
-        events={[...evenements, ...PLAGES_REPAS]}
+        events={evenements}
         eventContent={ContenuRdv}
         eventClick={(info) => {
           info.jsEvent.preventDefault();

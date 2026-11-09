@@ -60,12 +60,6 @@
   margin: 0 0.45rem;
 }
 
-/* Plages repas à garder libres (11h-14h, 18h-20h) : léger hachuré */
-.planning-semaine .fc .fc-bg-event.plage-repas {
-  opacity: 1;
-  background: repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.55) 0 0.3rem, transparent 0.3rem 0.6rem);
-}
-
 /* --- Blocs de rendez-vous --- */
 .planning-semaine .fc .fc-timegrid-event {
   border-radius: 0.625rem;

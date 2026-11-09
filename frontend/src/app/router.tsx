@@ -6,6 +6,7 @@ import { useAuth } from "@/hooks/useAuth";
 import type { Role } from "@/types";
 import { PageAgenda } from "@/pages/PageAgenda";
 import { PageAgendaPatient } from "@/pages/PageAgendaPatient";
+import { PageFichePatient } from "@/pages/PageFichePatient";
 import { PageAnnuaire } from "@/pages/PageAnnuaire";
 import { PageProfil } from "@/pages/PageProfil";
 import { PageUnite } from "@/pages/PageUnite";
@@ -51,6 +52,10 @@ export const router = createBrowserRouter(
           {
             path: "/patients/:patientId/agenda",
             element: <RoleRequis roles={["soignant"]}><PageAgendaPatient /></RoleRequis>,
+          },
+          {
+            path: "/patients/:patientId/profil",
+            element: <RoleRequis roles={["soignant"]}><PageFichePatient /></RoleRequis>,
           },
           {
             path: "/unites/:numero",
