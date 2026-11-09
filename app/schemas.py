@@ -569,6 +569,50 @@ class PlanOut(Schema):
     hors_chambre: list[PatientPlan]
 
 
+# --------------------------------------------------------------------------
+# Synchronisation (bouton « Synchroniser » : solveur OR-Tools)
+# --------------------------------------------------------------------------
+
+class SynchronisationDemande(Schema):
+    """Période à planifier : `jours` jours à partir de `du` (aujourd'hui par défaut)."""
+    du: Optional[date] = None
+    jours: int = Field(7, ge=1, le=14)
+
+
+class IncoherenceOut(Schema):
+    code: str
+    gravite: str
+    message: str
+
+
+class RdvIgnoreOut(Schema):
+    rdv_id: int
+    raison: str
+
+
+class JourSynchroniseOut(Schema):
+    """
+    statut : « rien_a_planifier », « optimal », « faisable » (enregistrés),
+    ou « impossible », « inconnu », « donnees_incompletes », « erreur », « conflit »
+    (rien n'est enregistré pour ce jour).
+    """
+    jour: date
+    statut: str
+    message: str = ""
+    nb_en_attente: int = 0
+    nb_planifies: int = 0
+    incoherences: list[IncoherenceOut] = []
+    ignores: list[RdvIgnoreOut] = []
+
+
+class SynchronisationOut(Schema):
+    du: date
+    au: date
+    total_planifies: int
+    total_restants: int  # RDV toujours en attente sur la période
+    jours: list[JourSynchroniseOut]
+
+
 # Références en avant (ChambreOut et ConflitOut sont définis après leur première utilisation)
 MoiOut.model_rebuild()
 RDVOut.model_rebuild()

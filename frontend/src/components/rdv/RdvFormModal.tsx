@@ -7,11 +7,16 @@
  * (fin après début, au moins un patient ou un soignant…). Les règles du
  * planning (conflits) sont vérifiées par le backend.
  *
+ * « À planifier automatiquement » (soignants) : le RDV est créé « en attente »,
+ * avec seulement un jour et une durée ; le solveur choisit l'heure au prochain
+ * « Synchroniser ». Décocher la case redonne un horaire fixe.
+ *
  * Mode patient : le patient ajoute ou modifie une visite pour lui-même.
  * Nom RDV = Visite, Soignant(s) = Aucun et Patient = lui-même sont imposés ;
  * le lieu est « Chambre du patient » par défaut et reste modifiable.
  */
 import { useEffect, useId, useMemo, useState, type ReactNode } from "react";
+import { format } from "date-fns";
 import { Modal } from "@/components/ui/Modal";
 import { Chargement } from "@/components/ui/Etats";
 import { useLieux, usePatients, useSoignants, useTypesRdv } from "@/hooks/useReferentiel";
@@ -37,6 +42,9 @@ interface Props {
 const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
 const hhmm = (m: number) => `${String(Math.floor(m / 60) % 24).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 const sansAccents = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const DUREES = Array.from({ length: 48 }, (_, i) => (i + 1) * 5); // 5 min à 4 h
+const HEURE_PROVISOIRE = 8 * 60; // horaire provisoire d'un RDV en attente (seule la durée compte)
+
 const HEURES = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
 const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 
@@ -88,7 +96,7 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
   // Un patient n'a pas accès aux listes des soignants et des patients (inutiles ici)
   const soignants = useSoignants(!modePatient);
   const patients = usePatients(!modePatient);
-  const ids = { type: useId(), desc: useId(), debut: useId(), fin: useId(), lieu: useId(), soignant: useId(), patients: useId(), date: useId(), prep: useId() };
+  const ids = { type: useId(), desc: useId(), debut: useId(), fin: useId(), lieu: useId(), soignant: useId(), patients: useId(), date: useId(), prep: useId(), auto: useId(), duree: useId() };
 
   const [typeId, setTypeId] = useState(initiale.typeId ? String(initiale.typeId) : "");
   const [descriptif, setDescriptif] = useState(initiale.descriptif);
@@ -100,6 +108,11 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
   const [soignantIds, setSoignantIds] = useState(modePatient ? [] : initiale.soignantIds);
   const [patientIds, setPatientIds] = useState(modePatient ? [patientConnecte.id] : initiale.patientIds);
   const [preparation, setPreparation] = useState(initiale.preparation);
+  const [aPlanifier, setAPlanifier] = useState(initiale.statut === "en_attente");
+  const [duree, setDuree] = useState(() => {
+    const d = minutes(initiale.fin.slice(11, 16)) - minutes(initiale.debut.slice(11, 16));
+    return d > 0 ? Math.ceil(d / 5) * 5 : 30;
+  });
   const [erreurs, setErreurs] = useState<string[]>([]);
   const [envoi, setEnvoi] = useState(false);
   const [confirmerSuppression, setConfirmerSuppression] = useState(false);
@@ -112,6 +125,7 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
   const ajusterFin = (debut: string, type: TypeRdv | undefined) => {
     if (finChoisie || !debut || !type) return;
     setHeureFin(hhmm(minutes(debut) + type.dureeParDefaut));
+    setDuree(Math.ceil(type.dureeParDefaut / 5) * 5);
   };
 
   // Mode patient : Nom RDV = Visite, lieu = Chambre du patient par défaut
@@ -153,7 +167,9 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
     const e: string[] = [];
     if (!typeId) e.push("Choisissez le nom du RDV.");
     if (!date) e.push("Indiquez la date.");
-    if (!heureDebut || !heureFin) e.push("Indiquez l'horaire.");
+    if (aPlanifier) {
+      if (date && date < format(new Date(), "yyyy-MM-dd")) e.push("Un RDV à planifier doit être aujourd'hui ou plus tard.");
+    } else if (!heureDebut || !heureFin) e.push("Indiquez l'horaire.");
     else if (minutes(heureFin) <= minutes(heureDebut)) e.push("L'heure de fin doit être après l'heure de début.");
     if (!lieuId) e.push("Choisissez le lieu.");
     if (!soignantIds.length && !patientIds.length) e.push("Choisissez au moins un patient ou un soignant.");
@@ -165,10 +181,13 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
       lieuId: Number(lieuId),
       soignantIds,
       patientIds,
-      debut: `${date}T${heureDebut}:00`,
-      fin: `${date}T${heureFin}:00`,
+      debut: aPlanifier ? `${date}T${hhmm(HEURE_PROVISOIRE)}:00` : `${date}T${heureDebut}:00`,
+      fin: aPlanifier ? `${date}T${hhmm(HEURE_PROVISOIRE + duree)}:00` : `${date}T${heureFin}:00`,
       descriptif,
       preparation,
+      // En attente si la case est cochée ; un RDV en attente décoché devient planifié ;
+      // sinon le statut reste celui d'origine (non envoyé à la création).
+      statut: aPlanifier ? "en_attente" : initiale.statut === "en_attente" ? "planifie" : initiale.statut,
     });
     setEnvoi(false);
     if (ok) onFermer();
@@ -187,7 +206,10 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
       "Nouveau RDV"
     ) : (
       <>
-        {original.type.libelle} :<span className="ml-[1.6rem]">{plageHoraire(depuisIso(original.debut), depuisIso(original.fin))}</span>
+        {original.type.libelle} :
+        <span className="ml-[1.6rem]">
+          {original.statut === "en_attente" ? "à planifier" : plageHoraire(depuisIso(original.debut), depuisIso(original.fin))}
+        </span>
       </>
     );
 
@@ -256,6 +278,41 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
 
           <div className="h-[1.2rem]" aria-hidden />
 
+          {!modePatient && (
+            <Ligne libelle="Planification" id={ids.auto}>
+              <label className="flex cursor-pointer items-center gap-[0.5rem]">
+                <input
+                  id={ids.auto}
+                  type="checkbox"
+                  checked={aPlanifier}
+                  onChange={(e) => {
+                    setAPlanifier(e.target.checked);
+                    // On garde la durée de l'horaire déjà saisi
+                    const d = heureDebut && heureFin ? minutes(heureFin) - minutes(heureDebut) : 0;
+                    if (e.target.checked && d > 0) setDuree(Math.min(240, Math.ceil(d / 5) * 5));
+                  }}
+                />
+                <span>À planifier automatiquement</span>
+              </label>
+            </Ligne>
+          )}
+
+          {aPlanifier ? (
+            <Ligne libelle="Durée" id={ids.duree}>
+              <span className="flex flex-wrap items-baseline gap-x-[0.8rem]">
+                <select id={ids.duree} className="champ-rdv" value={duree} onChange={(e) => setDuree(Number(e.target.value))}>
+                  {DUREES.map((d) => (
+                    <option key={d} value={d}>
+                      {d >= 60 ? `${Math.floor(d / 60)} h${d % 60 ? String(d % 60).padStart(2, "0") : ""}` : `${d} min`}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[0.9rem] italic text-[#555]">
+                  L'heure sera choisie par « Synchroniser » (7 jours à venir).
+                </span>
+              </span>
+            </Ligne>
+          ) : (
           <Ligne libelle="Horaire" id={ids.debut}>
             <span className="flex items-baseline gap-[0.6rem]">
               <ChoixHeure
@@ -279,6 +336,7 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
               />
             </span>
           </Ligne>
+          )}
 
           <Ligne libelle="Lieu" id={ids.lieu}>
             <select id={ids.lieu} className="champ-rdv min-w-0 flex-1" value={lieuId} onChange={(e) => setLieuId(e.target.value)}>

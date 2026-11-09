@@ -5,11 +5,11 @@
 import { createContext, useCallback, useContext, useMemo, useState, type ReactNode } from "react";
 import { PopupMessage } from "@/components/ui/PopupMessage";
 
-type Notification = { variante: "erreur" | "succes"; message: string; details?: string[] } | null;
+type Notification = { variante: "erreur" | "succes"; message: string; details?: string[]; titre?: string } | null;
 
 interface ValeurNotifications {
-  /** `details` : liste affichée sous le message (ex. conflits bloquants). */
-  erreur: (message?: string, details?: string[]) => void;
+  /** `details` : liste affichée sous le message (ex. conflits bloquants). `titre` : « Erreur » par défaut. */
+  erreur: (message?: string, details?: string[], titre?: string) => void;
   succes: (message?: string) => void;
 }
 
@@ -19,8 +19,8 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   const [notif, setNotif] = useState<Notification>(null);
 
   const erreur = useCallback(
-    (message = "L’action n’a pas pu être effectuée.", details?: string[]) =>
-      setNotif({ variante: "erreur", message, details }),
+    (message = "L’action n’a pas pu être effectuée.", details?: string[], titre?: string) =>
+      setNotif({ variante: "erreur", message, details, titre }),
     [],
   );
   const succes = useCallback((message = "Action réalisée !") => setNotif({ variante: "succes", message }), []);
@@ -30,7 +30,7 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
     <Contexte.Provider value={valeur}>
       {children}
       {notif?.variante === "erreur" && (
-        <PopupMessage variante="erreur" titre="Erreur" onFermer={() => setNotif(null)}>
+        <PopupMessage variante="erreur" titre={notif.titre ?? "Erreur"} onFermer={() => setNotif(null)}>
           {notif.message}
           {notif.details?.length ? (
             <ul className="mt-[0.3rem] list-disc pl-[1.2rem] text-left text-[0.95rem]">
