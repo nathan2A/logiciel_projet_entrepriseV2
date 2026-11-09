@@ -30,8 +30,8 @@ export interface RdvMock {
   statut: "planifie" | "en_attente" | "realise" | "annule";
   commentaire: string | null;
   createur_id: number;
-  soignant_id: number;
-  patient_id: number;
+  soignant_ids: number[]; // zéro, un ou plusieurs soignants
+  patient_id: number | null; // null : RDV entre soignants
   type_id: number;
   lieu_id: number;
 }
@@ -74,7 +74,7 @@ const typeId = (c: Exclude<CategorieRdv, "autre">) =>
 // Pour l'instant, tous les soignants sont administrateurs.
 const soignant = (id: number, nom: string, prenom: string, profession: string, naissance: string): UtilisateurMock => ({
   id,
-  login: `${nom} ${prenom}`.toLowerCase(),
+  login: `${nom} ${prenom}`,
   nom,
   prenom,
   role: "administrateur",
@@ -102,7 +102,7 @@ const patient = (
   id: number, nom: string, prenom: string, chambre: number, arrivee: number, depart: number, naissance: string,
 ): UtilisateurMock => ({
   id,
-  login: `${nom} ${prenom}`.toLowerCase(),
+  login: `${nom} ${prenom}`,
   nom,
   prenom,
   role: "patient",
@@ -175,7 +175,8 @@ export function genererRdv(): RdvMock[] {
       if (cle < p.date_arrivee! || cle > p.date_depart_prevue!) continue;
       const occupe: [number, number][] = [];
       const ajouter = (
-        cat: Exclude<CategorieRdv, "autre">, debut: string, duree: number, soignantId: number, lieuId: number, commentaire: string | null,
+        cat: Exclude<CategorieRdv, "autre">, debut: string, duree: number, soignantIds: number[], lieuId: number,
+        commentaire: string | null, createurId: number = S.leMeur,
       ): boolean => {
         const d = minutes(debut);
         const f = d + duree;
@@ -183,43 +184,52 @@ export function genererRdv(): RdvMock[] {
         occupe.push([d, f]);
         rdv.push({
           id: id++, debut: iso(date, debut), fin: iso(date, hhmm(f)), statut: "planifie", commentaire,
-          createur_id: S.leMeur, soignant_id: soignantId, patient_id: p.id, type_id: typeId(cat), lieu_id: lieuId,
+          createur_id: createurId, soignant_ids: soignantIds, patient_id: p.id, type_id: typeId(cat), lieu_id: lieuId,
         });
         return true;
       };
 
       // Repas tous les jours
-      ajouter("repas", "12:00", 60, S.madec, LIEU.restaurant, "Déjeuner en salle de restaurant");
-      ajouter("repas", "18:00", 60, S.riou, LIEU.restaurant, "Dîner");
+      ajouter("repas", "12:00", 60, [S.madec], LIEU.restaurant, "Déjeuner en salle de restaurant");
+      ajouter("repas", "18:00", 60, [S.riou], LIEU.restaurant, "Dîner");
 
       if (ouvre) {
         // Prise de sang deux matins par semaine environ
-        if (hasard() < 0.35) ajouter("prise_de_sang", "08:00", 15, S.jaouen, LIEU.chambre, "Bilan sanguin à jeun");
+        if (hasard() < 0.35) ajouter("prise_de_sang", "08:00", 15, [S.jaouen], LIEU.chambre, "Bilan sanguin à jeun");
         // Une séance de kiné par jour : séance de groupe sur le plateau (créneaux
         // fixes) ou séance individuelle en chambre (un seul patient à la fois par kiné).
         if (hasard() < 0.7) {
           const [debut, kine] = choisir(SEANCES_PLATEAU);
-          ajouter("kine_plateau", debut, 60, kine, LIEU.plateau, "Exercices sur le plateau de kiné");
+          ajouter("kine_plateau", debut, 60, [kine], LIEU.plateau, "Exercices sur le plateau de kiné");
         } else {
           const libres = SEANCES_CHAMBRE.filter(([d, k]) => !kineOccupe.has(`${cle}|${d}|${k}`));
           for (const [debut, kine] of libres.sort(() => hasard() - 0.5)) {
-            if (ajouter("kine_chambre", debut, 30, kine, LIEU.chambre, "Mobilisation au lit et transferts")) {
+            if (ajouter("kine_chambre", debut, 30, [kine], LIEU.chambre, "Mobilisation au lit et transferts")) {
               kineOccupe.add(`${cle}|${debut}|${kine}`);
               break;
             }
           }
         }
-        if (hasard() < 0.2) ajouter("visite", "10:30", 30, S.leMeur, LIEU.chambre, "Visite médicale");
-        if (hasard() < 0.15) ajouter("etp", "16:30", 60, S.jaouen, LIEU.etp, "Atelier « Bien vivre avec son traitement »");
-        if (hasard() < 0.15) ajouter("arthromoteur", "17:30", 30, S.riou, LIEU.chambre, "Arthromoteur genou droit");
-        if (hasard() < 0.12) ajouter("soins_pluripro", "17:00", 30, S.jaouen, LIEU.soins, "Pansement et point douleur");
-        if (hasard() < 0.05) ajouter("rdv_exterieur", "09:00", 120, S.jaouen, LIEU.exterieur, "Consultation au CHU de Brest (transport en VSL)");
-        if (hasard() < 0.04) ajouter("indisponible", "14:00", 60, S.leMeur, LIEU.chambre, "Examen d'imagerie");
+        if (hasard() < 0.2) ajouter("visite", "10:30", 30, [S.leMeur], LIEU.chambre, "Visite médicale");
+        if (hasard() < 0.15) ajouter("etp", "16:30", 60, [S.jaouen], LIEU.etp, "Atelier « Bien vivre avec son traitement »");
+        if (hasard() < 0.15) ajouter("arthromoteur", "17:30", 30, [S.riou], LIEU.chambre, "Arthromoteur genou droit");
+        if (hasard() < 0.12) ajouter("soins_pluripro", "17:00", 30, [S.jaouen, S.madec], LIEU.soins, "Pansement et point douleur (IDE + aide-soignante)");
+        if (hasard() < 0.05) ajouter("rdv_exterieur", "09:00", 120, [S.jaouen], LIEU.exterieur, "Consultation au CHU de Brest (transport en VSL)");
+        if (hasard() < 0.04) ajouter("indisponible", "14:00", 60, [S.leMeur], LIEU.chambre, "Examen d'imagerie");
       } else if (hasard() < 0.5) {
-        // Week-end : visite des proches
-        ajouter("visite", "14:00", 120, S.riou, LIEU.chambre, "Visite de la famille");
+        // Week-end : visite des proches, ajoutée par le patient lui-même (sans soignant)
+        ajouter("visite", "14:00", 120, [], LIEU.chambre, "Visite de la famille", p.id);
       }
     }
+
+    // RDV entre soignants, sans patient : staff le lundi, transmissions chaque jour ouvré
+    const reunion = (cat: "staff" | "transmissions", debut: string, duree: number, soignantIds: number[], commentaire: string) =>
+      rdv.push({
+        id: id++, debut: iso(date, debut), fin: iso(date, hhmm(minutes(debut) + duree)), statut: "planifie", commentaire,
+        createur_id: S.leMeur, soignant_ids: soignantIds, patient_id: null, type_id: typeId(cat), lieu_id: LIEU.soins,
+      });
+    if (date.getDay() === 1) reunion("staff", "13:30", 30, [S.leMeur, S.quinet, S.leFur, S.jaouen], "Staff pluridisciplinaire");
+    if (ouvre) reunion("transmissions", "13:00", 30, [S.madec, S.riou, S.jaouen], "Transmissions de l'équipe");
   }
   return rdv;
 }

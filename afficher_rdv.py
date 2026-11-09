@@ -59,8 +59,11 @@ def afficher_rendez_vous(db: Session, jour: date):
     relation_patient = (
         "patient" if "patient" in relations else None
     )
+    # Un RDV peut avoir plusieurs soignants (relation « soignants »)
     relation_soignant = (
-        "soignant" if "soignant" in relations else None
+        "soignants" if "soignants" in relations
+        else "soignant" if "soignant" in relations
+        else None
     )
     relation_lieu = "lieu" if "lieu" in relations else None
 
@@ -144,7 +147,11 @@ def afficher_rendez_vous(db: Session, jour: date):
         valeurs = [
             horaires,
             nom_personne(patient),
-            nom_personne(soignant),
+            (
+                ", ".join(nom_personne(s) for s in soignant) or "Aucun"
+                if isinstance(soignant, list)
+                else nom_personne(soignant)
+            ),
             obtenir_valeur(
                 type_rdv,
                 ["libelle", "nom", "intitule", "description"],

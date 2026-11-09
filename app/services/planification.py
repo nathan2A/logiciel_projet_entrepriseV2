@@ -2,7 +2,7 @@
 from datetime import date, datetime, time, timedelta
 
 from ortools.sat.python import cp_model
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models import (
     Patient,
@@ -91,6 +91,10 @@ def planifier_journee(db: Session, jour: date) -> dict:
     Les RDV planifie existants sont conservés comme contraintes fixes.
     Cette fonction ne modifie pas la base de données : elle renvoie
     les propositions de créneaux à valider puis à enregistrer.
+
+    Un RDV peut avoir plusieurs soignants (rdv.soignants) et pas de patient
+    (rdv.patient_id = None, ex. réunion entre soignants) : chaque soignant
+    du RDV est occupé pendant tout le créneau.
     """
 
     debut_jour = datetime.combine(jour, time.min)
@@ -120,7 +124,7 @@ def planifier_journee(db: Session, jour: date) -> dict:
         db.query(RDV)
         .options(
             joinedload(RDV.patient),
-            joinedload(RDV.soignant),
+            selectinload(RDV.soignants),
             joinedload(RDV.type),
             joinedload(RDV.lieu),
         )
@@ -134,10 +138,12 @@ def planifier_journee(db: Session, jour: date) -> dict:
 
     # Le solveur ne doit pas planifier les RDV d'un patient absent
     # de la liste des patients présents sur la journée.
+    # Un RDV sans patient doit avoir au moins un soignant.
     a_planifier = [
         r for r in a_planifier
-        if r.patient_id in patients_par_id
-        and r.soignant_id in soignants_par_id
+        if (r.patient_id is None or r.patient_id in patients_par_id)
+        and (r.patient_id is not None or r.soignants)
+        and all(s.id in soignants_par_id for s in r.soignants)
     ]
 
     model = cp_model.CpModel()
@@ -159,7 +165,7 @@ def planifier_journee(db: Session, jour: date) -> dict:
 
     # Les rendez-vous déjà planifiés bloquent leurs ressources.
     for rdv in fixes:
-        if rdv.patient_id not in intervalles_patient:
+        if rdv.patient_id is not None and rdv.patient_id not in intervalles_patient:
             continue
 
         debut = minutes_depuis_minuit(rdv.debut)
@@ -175,8 +181,10 @@ def planifier_journee(db: Session, jour: date) -> dict:
             debut_u, duree, f"fixe_{rdv.id}"
         )
 
-        intervalles_patient[rdv.patient_id].append(intervalle)
-        intervalles_soignant.setdefault(rdv.soignant_id, []).append(intervalle)
+        if rdv.patient_id is not None:
+            intervalles_patient[rdv.patient_id].append(intervalle)
+        for soignant in rdv.soignants:
+            intervalles_soignant.setdefault(soignant.id, []).append(intervalle)
 
         if est_plateau(rdv.lieu):
             intervalles_plateau.append(intervalle)
@@ -207,33 +215,35 @@ def planifier_journee(db: Session, jour: date) -> dict:
             "duree": duree,
         }
 
-        intervalles_patient[rdv.patient_id].append(intervalle)
-        intervalles_soignant.setdefault(rdv.soignant_id, []).append(intervalle)
+        if rdv.patient_id is not None:
+            intervalles_patient[rdv.patient_id].append(intervalle)
+        for soignant in rdv.soignants:
+            intervalles_soignant.setdefault(soignant.id, []).append(intervalle)
 
         if est_plateau(rdv.lieu):
             intervalles_plateau.append(intervalle)
 
-        if est_toilette(rdv):
+        if rdv.patient_id is not None and est_toilette(rdv):
             interventions_toilette.setdefault(rdv.patient_id, []).append(rdv.id)
 
-        if est_reeducation(rdv):
+        if rdv.patient_id is not None and est_reeducation(rdv):
             interventions_reeducation.setdefault(rdv.patient_id, []).append(rdv.id)
 
-        # Le créneau doit respecter les horaires du professionnel.
-        soignant = rdv.soignant
-        if est_kine(soignant):
-            debut_service, fin_service = HORAIRES_KINE
-        elif soignant.equipe in HORAIRES_EQUIPE:
-            debut_service, fin_service = HORAIRES_EQUIPE[soignant.equipe]
-        else:
-            # Pas d'horaire connu : on refuse de deviner le service.
-            raise ValueError(
-                f"Horaire inconnu pour le soignant {soignant.id} "
-                f"({soignant.prenom} {soignant.nom}, {soignant.profession})."
-            )
+        # Le créneau doit respecter les horaires de CHAQUE professionnel du RDV.
+        for soignant in rdv.soignants:
+            if est_kine(soignant):
+                debut_service, fin_service = HORAIRES_KINE
+            elif soignant.equipe in HORAIRES_EQUIPE:
+                debut_service, fin_service = HORAIRES_EQUIPE[soignant.equipe]
+            else:
+                # Pas d'horaire connu : on refuse de deviner le service.
+                raise ValueError(
+                    f"Horaire inconnu pour le soignant {soignant.id} "
+                    f"({soignant.prenom} {soignant.nom}, {soignant.profession})."
+                )
 
-        model.Add(debut >= vers_unites(debut_service))
-        model.Add(fin <= vers_unites(fin_service))
+            model.Add(debut >= vers_unites(debut_service))
+            model.Add(fin <= vers_unites(fin_service))
 
     # Un patient ne peut pas avoir deux rendez-vous simultanément.
     for intervalles in intervalles_patient.values():
@@ -342,7 +352,7 @@ def planifier_journee(db: Session, jour: date) -> dict:
         resultat_rdvs.append({
             "rdv_id": rdv_id,
             "patient_id": v["rdv"].patient_id,
-            "soignant_id": v["rdv"].soignant_id,
+            "soignant_ids": [s.id for s in v["rdv"].soignants],
             "type": v["rdv"].type.libelle,
             "lieu": v["rdv"].lieu.libelle,
             "debut": date_heure(jour, debut_minute).isoformat(),

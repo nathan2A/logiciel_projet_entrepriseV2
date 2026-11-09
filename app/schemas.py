@@ -116,6 +116,12 @@ class MoiOut(Schema):
     prenom: str
     # Rôle : patient, soignant ou administrateur
     role: str
+    # Soignant uniquement : profession (vide pour un patient)
+    profession: Optional[str] = None
+    # Patient uniquement : séjour (vides pour un soignant)
+    date_arrivee: Optional[date] = None
+    date_depart_prevue: Optional[date] = None
+    chambre: Optional["ChambreOut"] = None
 
 
 # --------------------------------------------------------------------------
@@ -283,15 +289,37 @@ class RDVOut(Schema):
     commentaire: Optional[str] = None
     # Identifiant de l'utilisateur ayant créé le RDV
     createur_id: int
-    # Informations résumées du patient
+    # Informations résumées du patient (None : RDV sans patient)
     # Pydantic produit un objet imbriqué contenant les champs de PatientResume.
-    patient: PatientResume
-    # Informations résumées du professionnel
-    soignant: SoignantResume
+    patient: Optional[PatientResume] = None
+    # Professionnels qui réalisent l'intervention (liste éventuellement vide)
+    soignants: list[SoignantResume] = []
     # Informations sur le type d'intervention
     type: TypeRDVOut
     # Informations sur le lieu
     lieu: LieuOut
+    # Conflits détectés après une création ou une modification (vide en lecture)
+    conflits: list["ConflitOut"] = []
+
+
+class ConflitOut(Schema):
+    """
+    Un conflit détecté dans le planning (voir app/conflits.py).
+
+    Tous les conflits sont des avertissements : le RDV est enregistré,
+    l'interface propose à l'utilisateur de continuer ou d'annuler.
+    """
+    id: str
+    # PATIENT_DOUBLE_TACHE, SOIGNANT_DOUBLE_TACHE, HORS_HORAIRES, PLAGE_REPAS
+    type: str
+    gravite: Literal["bloquant", "avertissement"] = "avertissement"
+    # Message en français, affiché tel quel
+    message: str
+    # RDV concernés (le RDV créé ou modifié en premier)
+    rdv_ids: list[int]
+    # Personne concernée : le patient OU un soignant
+    patient_id: Optional[int] = None
+    soignant_id: Optional[int] = None
 
 
 # --------------------------------------------------------------------------
@@ -311,8 +339,9 @@ class RDVCreation(Schema):
     Le frontend doit transmettre :
         - Un début
         - Une fin
-        - Un soignant
-        - Un patient
+        - Zéro, un ou plusieurs soignants (soignant_ids)
+        - Zéro ou un patient (patient_id)
+          (au moins un patient ou un soignant)
         - Un type de RDV
         - Un lieu
 
@@ -331,10 +360,10 @@ class RDVCreation(Schema):
     statut: Statut = "planifie"
     # Informations complémentaires facultatives
     commentaire: Optional[str] = None
-    # Identifiant du soignant qui interviendra
-    soignant_id: int
-    # Identifiant du patient concerné
-    patient_id: int
+    # Identifiants des soignants qui interviendront (liste éventuellement vide)
+    soignant_ids: list[int] = []
+    # Identifiant du patient concerné (None : RDV sans patient)
+    patient_id: Optional[int] = None
     # Identifiant du type d'intervention
     type_id: int
     # Identifiant du lieu
@@ -363,6 +392,10 @@ class RDVCreation(Schema):
         # Refuse les horaires incohérents
         if self.fin <= self.debut:
             raise ValueError("La fin du RDV doit être après son début.")
+        # « Au moins un patient ou un soignant » est vérifié dans la route
+        # (un patient qui ajoute une visite peut omettre patient_id : c'est lui).
+        # Un même soignant n'est compté qu'une fois
+        self.soignant_ids = list(dict.fromkeys(self.soignant_ids))
         # Renvoie l'objet validé
         return self
 
@@ -392,9 +425,9 @@ class RDVModification(Schema):
     statut: Optional[Statut] = None
     # Nouveau commentaire éventuel
     commentaire: Optional[str] = None
-    # Changement de soignant
-    soignant_id: Optional[int] = None
-    # Changement de patient
+    # Nouvelle liste complète de soignants (remplace l'ancienne ; [] = aucun)
+    soignant_ids: Optional[list[int]] = None
+    # Changement de patient (null explicite = plus de patient)
     patient_id: Optional[int] = None
     # Changement de type d'intervention
     type_id: Optional[int] = None
@@ -513,7 +546,7 @@ class RDVResume(Schema):
     debut: datetime
     fin: datetime
     statut: str
-    soignant: SoignantResume
+    soignants: list[SoignantResume] = []
     type: TypeRDVOut
     lieu: LieuOut
 
@@ -534,3 +567,8 @@ class PlanOut(Schema):
     moment: datetime
     chambres: list[ChambrePlan]
     hors_chambre: list[PatientPlan]
+
+
+# Références en avant (ChambreOut et ConflitOut sont définis après leur première utilisation)
+MoiOut.model_rebuild()
+RDVOut.model_rebuild()

@@ -126,20 +126,22 @@ export function versRendezVous(r: RDVJSON): RendezVous {
     descriptif,
     preparation,
     createurId: r.createur_id,
-    patient: { id: r.patient.id, login: r.patient.login, nom: r.patient.nom, prenom: r.patient.prenom },
-    soignant: { ...r.soignant },
+    patient: r.patient
+      ? { id: r.patient.id, login: r.patient.login, nom: r.patient.nom, prenom: r.patient.prenom }
+      : null,
+    soignants: (r.soignants ?? []).map((s) => ({ ...s })),
     type: versTypeRdv(r.type),
     lieu: versLieu(r.lieu),
   };
 }
 
-/** Corps envoyé au backend pour UN patient de la saisie. */
-export function versCreationJSON(s: SaisieRdv, patientId: number): RDVCreationJSON {
+/** Corps envoyé au backend pour UN patient de la saisie (null : RDV sans patient). */
+export function versCreationJSON(s: SaisieRdv, patientId: number | null): RDVCreationJSON {
   return {
     debut: s.debut,
     fin: s.fin,
     commentaire: assemblerCommentaire(s.descriptif, s.preparation),
-    soignant_id: s.soignantId,
+    soignant_ids: s.soignantIds,
     patient_id: patientId,
     type_id: s.typeId,
     lieu_id: s.lieuId,

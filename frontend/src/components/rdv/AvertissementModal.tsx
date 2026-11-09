@@ -1,7 +1,9 @@
 /**
- * Conflit d'avertissement renvoyé par le backend : l'action est enregistrée,
- * l'utilisateur choisit de la conserver ou de revenir en arrière
- * (le planning reste flexible).
+ * Conflit renvoyé par le backend : l'action est déjà enregistrée, et chaque
+ * conflit est présenté l'un après l'autre (le patient d'abord, puis chaque
+ * soignant concerné). Pour chacun, l'utilisateur choisit :
+ *  - « Continuer » : passe au conflit suivant ; après le dernier, l'action est conservée ;
+ *  - « Annuler le changement » : toute l'action est annulée (retour à l'état d'avant).
  */
 import { useState } from "react";
 import { FaTriangleExclamation } from "react-icons/fa6";
@@ -10,28 +12,37 @@ import { COULEURS_UI } from "@/theme/couleursRdv";
 import type { Conflit } from "@/types";
 
 interface Props {
-  conflits: Conflit[];
-  onConserver: () => void;
+  conflit: Conflit;
+  position: number; // 1 = premier conflit
+  total: number;
+  onContinuer: () => void;
   onRenoncer: () => Promise<void>;
 }
 
-export function AvertissementModal({ conflits, onConserver, onRenoncer }: Props) {
+/** « … : DUPONT Daniel. » → « … : DUPONT Daniel, souhaitez-vous continuer ? » */
+const question = (message: string) => `${message.trim().replace(/[.\s]+$/, "")}, souhaitez-vous continuer ?`;
+
+export function AvertissementModal({ conflit, position, total, onContinuer, onRenoncer }: Props) {
   const [envoi, setEnvoi] = useState(false);
   return (
-    <Modal titre="Attention : conflit dans le planning" titreAccessible="Conflit dans le planning" couleurBandeau={COULEURS_UI.orange} onFermer={onConserver}>
-      <p>Le rendez-vous a bien été enregistré, mais le planning signale :</p>
-      <ul className="mt-[0.6rem] space-y-[0.3rem]">
-        {conflits.map((c) => (
-          <li key={c.id} className="flex items-baseline gap-[0.5rem]">
-            <FaTriangleExclamation aria-hidden className="shrink-0 translate-y-[0.15rem] text-[#c96a00]" />
-            {c.message}
-          </li>
-        ))}
-      </ul>
-      <p className="mt-[0.8rem]">Voulez-vous conserver ce changement ?</p>
-      <div className="mt-[1rem] flex items-baseline justify-between gap-[1rem]">
-        <button type="button" data-autofocus disabled={envoi} onClick={onConserver} className="text-[1.45rem] text-valider underline">
-          Conserver
+    <Modal
+      titre="Attention"
+      titreAccessible={`Attention : conflit ${position} sur ${total}`}
+      couleurBandeau={COULEURS_UI.orange}
+      onFermer={onContinuer}
+    >
+      <p className="flex items-baseline gap-[0.6rem]">
+        <FaTriangleExclamation aria-hidden className="shrink-0 translate-y-[0.15rem] text-[#c96a00]" />
+        <span>{question(conflit.message)}</span>
+      </p>
+      {total > 1 && (
+        <p className="mt-[0.5rem] text-[0.9rem] text-[#666]">
+          Conflit {position} sur {total}
+        </p>
+      )}
+      <div className="mt-[1.2rem] flex items-baseline justify-between gap-[1rem]">
+        <button type="button" data-autofocus disabled={envoi} onClick={onContinuer} className="text-[1.45rem] text-valider underline">
+          Continuer
         </button>
         <button
           type="button"
