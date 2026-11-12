@@ -28,8 +28,9 @@ def connexion(
             func.lower(m.Utilisateur.login) == formulaire.username.strip().lower()
         )
     )
-    # Même message dans les deux cas : on ne révèle pas si le login existe
-    if utilisateur is None or not verifier_mot_de_passe(
+    # Même message dans tous les cas (login inconnu, profil supprimé, mauvais mot
+    # de passe) : on ne révèle pas si le login existe
+    if utilisateur is None or not utilisateur.actif or not verifier_mot_de_passe(
         formulaire.password, utilisateur.mot_de_passe_hash
     ):
         raise HTTPException(

@@ -1,16 +1,19 @@
 /**
- * « Annuaire » (pas de maquette) : choisir un patient pour ouvrir son agenda.
- * Mise en forme reprise de la charte : titre comme « MON PROFIL », blocs orange
- * « NOM Prénom : chambre » comme sur le planning. Patients présents aujourd'hui
- * rangés par unité, puis les autres (séjour terminé ou à venir).
+ * « Annuaire » (maquette 26) : choisir un patient ou un soignant pour ouvrir
+ * son agenda. Blocs orange « NOM Prénom : chambre » ; patients présents
+ * aujourd'hui rangés par unité, puis les autres (séjour terminé ou à venir),
+ * puis les soignants (avec leur profession).
+ * « Ajouter profil » ouvre la création de profil. Après une suppression de
+ * profil, l'Annuaire affiche le bilan (voir ActionsProfil).
  */
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { EnteteDate } from "@/components/layout/EnteteDate";
+import { BilanSuppression, type EtatSuppression } from "@/components/profils/BilanSuppression";
 import { BandeauHorsLigne, Chargement, ListeVide } from "@/components/ui/Etats";
-import { usePatients } from "@/hooks/useReferentiel";
-import type { Patient } from "@/types";
+import { usePatients, useSoignants } from "@/hooks/useReferentiel";
+import type { Patient, Soignant } from "@/types";
 import { depuisIso, jjmmaaaa } from "@/utils/dates";
 import { formatNom } from "@/utils/noms";
 
@@ -38,10 +41,35 @@ function CartePatient({ p, present }: { p: Patient; present: boolean }) {
   );
 }
 
+function CarteSoignant({ s }: { s: Soignant }) {
+  return (
+    <li>
+      <Link
+        to={`/soignants/${s.id}/agenda`}
+        className="flex min-h-[3.4rem] flex-col items-center justify-center rounded-charte bg-orange px-[0.8rem] py-[0.4rem] text-center transition hover:brightness-95"
+      >
+        <span className="text-[1.15rem] font-bold leading-tight">{formatNom(s)}</span>
+        <span className="text-[0.8rem] text-[#555]">{s.profession}</span>
+      </Link>
+    </li>
+  );
+}
+
 export function PageAnnuaire() {
   const patients = usePatients();
+  const soignants = useSoignants();
   const [recherche, setRecherche] = useState("");
   const jour = format(new Date(), "yyyy-MM-dd");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const suppression = (location.state as { suppression?: EtatSuppression } | null)?.suppression;
+
+  const soignantsFiltres = useMemo(() => {
+    const filtre = normaliser(recherche.trim());
+    return (soignants.data ?? [])
+      .filter((s) => !filtre || normaliser(`${s.nom} ${s.prenom} ${s.profession}`).includes(filtre))
+      .sort((a, b) => `${a.nom} ${a.prenom}`.localeCompare(`${b.nom} ${b.prenom}`, "fr"));
+  }, [soignants.data, recherche]);
 
   const sections = useMemo(() => {
     const filtre = normaliser(recherche.trim());
@@ -69,7 +97,15 @@ export function PageAnnuaire() {
   return (
     <div className="px-[2.2rem] pb-[2rem]">
       <EnteteDate />
-      <h1 className="mt-[0.4rem] text-center text-[2.9rem] font-normal">ANNUAIRE</h1>
+      <div className="relative mx-auto max-w-[60rem]">
+        <h1 className="mt-[0.4rem] text-center text-[2.9rem] font-normal">ANNUAIRE</h1>
+        <Link
+          to="/profils/nouveau"
+          className="absolute right-0 top-1/2 -translate-y-1/2 rounded-charte bg-jour px-[2.6rem] py-[0.7rem] text-[1.1rem] font-semibold transition hover:brightness-95"
+        >
+          Ajouter profil
+        </Link>
+      </div>
 
       <div className="mx-auto mt-[1rem] max-w-[60rem]">
         <label className="flex items-center gap-[1rem] border border-black px-[0.6rem] text-[1.15rem]">
@@ -77,7 +113,7 @@ export function PageAnnuaire() {
           <input
             value={recherche}
             onChange={(e) => setRecherche(e.target.value)}
-            placeholder="NOM, prénom ou numéro de chambre"
+            placeholder="NOM, prénom, numéro de chambre ou profession"
             className="min-w-0 flex-1 bg-transparent py-[0.6rem] outline-none placeholder:italic placeholder:text-[#8a8a8a]"
           />
         </label>
@@ -94,8 +130,8 @@ export function PageAnnuaire() {
           <div className="mt-[1rem]">
             <BandeauHorsLigne message="Impossible de charger la liste des patients." onReessayer={() => patients.refetch()} />
           </div>
-        ) : sections.length === 0 ? (
-          <ListeVide texte="Aucun patient ne correspond à la recherche." />
+        ) : sections.length === 0 && soignantsFiltres.length === 0 && !soignants.isPending ? (
+          <ListeVide texte="Aucun profil ne correspond à la recherche." />
         ) : (
           sections.map((s) => (
             <section key={s.titre} className="mt-[1.6rem]" aria-labelledby={`annuaire-${s.titre}`}>
@@ -110,7 +146,22 @@ export function PageAnnuaire() {
             </section>
           ))
         )}
+
+        {!patients.isPending && soignantsFiltres.length > 0 && (
+          <section className="mt-[1.6rem]" aria-labelledby="annuaire-soignants">
+            <h2 id="annuaire-soignants" className="mb-[0.6rem] text-[1.4rem] font-normal underline underline-offset-[0.2rem]">
+              Soignants :
+            </h2>
+            <ul className="grid grid-cols-3 gap-[0.8rem]">
+              {soignantsFiltres.map((s) => (
+                <CarteSoignant key={s.id} s={s} />
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
+
+      {suppression && <BilanSuppression etat={suppression} onFermer={() => navigate(".", { replace: true, state: null })} />}
     </div>
   );
 }

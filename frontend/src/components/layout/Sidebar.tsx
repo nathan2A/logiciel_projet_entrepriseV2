@@ -5,7 +5,7 @@
  */
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { FaBars, FaBug, FaCalendarDays, FaDumbbell, FaUser, FaUsers, FaUtensils } from "react-icons/fa6";
+import { FaBars, FaBug, FaCalendarDays, FaDumbbell, FaPlus, FaUser, FaUsers, FaUtensils } from "react-icons/fa6";
 import type { Role } from "@/types";
 
 interface Entree {
@@ -32,6 +32,7 @@ const ENTREES: Record<Role, Entree[]> = {
     { libelle: "Unité 1", icone: texteUnite(1), vers: "/unites/1" },
     { libelle: "Menu", icone: <FaUtensils /> },
     { libelle: "Signaler un bug", icone: <FaBug />, petit: true },
+    { libelle: "Ajouter un compte", icone: <FaPlus />, vers: "/profils/nouveau", petit: true },
   ],
 };
 

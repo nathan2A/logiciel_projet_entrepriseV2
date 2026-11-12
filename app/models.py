@@ -125,6 +125,16 @@ class Utilisateur(Base):
     # On conserve uniquement son empreinte (hash).
     mot_de_passe_hash = Column(String(255), nullable=False)  # jamais en clair
     
+    # Coordonnées facultatives (affichées dans les fiches profil)
+    date_naissance = Column(Date, nullable=True)
+    email = Column(String(255), nullable=True)
+    telephone = Column(String(30), nullable=True)
+
+    # Compte actif. Un profil « supprimé » est archivé (actif = False) : il ne
+    # peut plus se connecter et disparaît des listes, mais l'historique de ses
+    # RDV reste dans la base.
+    actif = Column(Boolean, nullable=False, default=True, server_default="true")
+
     # Colonne qui indique de quel type est l'utilisateur
     # Détermine si l'utilisateur est un patient, un soignant ou un administrateur.
     role = Column(String(30), nullable=False)

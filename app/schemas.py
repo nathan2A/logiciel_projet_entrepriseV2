@@ -122,6 +122,10 @@ class MoiOut(Schema):
     date_arrivee: Optional[date] = None
     date_depart_prevue: Optional[date] = None
     chambre: Optional["ChambreOut"] = None
+    # Coordonnées (facultatives)
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = None
 
 
 # --------------------------------------------------------------------------
@@ -210,6 +214,10 @@ class SoignantOut(SoignantResume):
     login: str
     # Rôle du professionnel
     role: str
+    # Coordonnées (facultatives)
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = None
 
 # --------------------------------------------------------------------------
 # Schémas des patients
@@ -254,6 +262,11 @@ class PatientOut(PatientResume):
     # Si aucune chambre n'est attribuée, la valeur renvoyée sera None.
     # Sinon, elle sera représentée selon le schéma ChambreOut.
     chambre: Optional[ChambreOut] = None
+
+    # Coordonnées (facultatives)
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = None
 
 
 # --------------------------------------------------------------------------
@@ -462,6 +475,25 @@ class UtilisateurOut(Schema):
     date_arrivee: Optional[date] = None
     date_depart_prevue: Optional[date] = None
     chambre_id: Optional[int] = None
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = None
+    actif: bool = True
+
+
+def _email_valide(valeur: Optional[str]) -> Optional[str]:
+    """Email facultatif ; s'il est donné, une forme simple « x@y.z »."""
+    if valeur is None or not valeur.strip():
+        return None
+    valeur = valeur.strip()
+    import re
+    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", valeur):
+        raise ValueError("Adresse email invalide.")
+    return valeur
+
+
+def _texte_ou_none(valeur: Optional[str]) -> Optional[str]:
+    return valeur.strip() if valeur and valeur.strip() else None
 
 
 class CompteCreation(Schema):
@@ -476,11 +508,25 @@ class CompteCreation(Schema):
     date_arrivee: Optional[date] = None
     date_depart_prevue: Optional[date] = None
     chambre_id: Optional[int] = None
+    # Coordonnées (facultatives)
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = Field(None, max_length=30)
 
     @field_validator("login")
     @classmethod
     def login_propre(cls, valeur):
         return valeur.strip().lower()
+
+    @field_validator("email")
+    @classmethod
+    def email_ok(cls, valeur):
+        return _email_valide(valeur)
+
+    @field_validator("telephone", "profession")
+    @classmethod
+    def texte_propre(cls, valeur):
+        return _texte_ou_none(valeur)
 
     @field_validator("mot_de_passe")
     @classmethod
@@ -515,16 +561,53 @@ class CompteModification(Schema):
     date_arrivee: Optional[date] = None
     date_depart_prevue: Optional[date] = None
     chambre_id: Optional[int] = None
+    date_naissance: Optional[date] = None
+    email: Optional[str] = None
+    telephone: Optional[str] = Field(None, max_length=30)
 
     @field_validator("login")
     @classmethod
     def login_propre(cls, valeur):
         return valeur.strip().lower() if valeur else valeur
 
+    @field_validator("email")
+    @classmethod
+    def email_ok(cls, valeur):
+        return _email_valide(valeur)
+
+    @field_validator("telephone", "profession")
+    @classmethod
+    def texte_propre(cls, valeur):
+        return _texte_ou_none(valeur)
+
     @field_validator("mot_de_passe")
     @classmethod
     def mot_de_passe_ok(cls, valeur):
         return _mot_de_passe_valide(valeur) if valeur is not None else valeur
+
+
+class RdvTransfereOut(Schema):
+    """Un RDV à venir d'un soignant supprimé, et ce qu'il est devenu."""
+    rdv_id: int
+    debut: datetime
+    fin: datetime
+    type: str
+    patient: Optional[str] = None       # « NOM Prénom »
+    remplacant: Optional[str] = None    # « NOM Prénom » du nouveau soignant
+    # « meme_heure » : confié à un collègue, même horaire
+    # « replanifie » : confié à un collègue, nouvel horaire le même jour (solveur)
+    # « en_attente » : confié à un collègue, horaire à trouver (bouton « Synchroniser »)
+    # « sans_remplacant » : aucun collègue de même profession, RDV gardé sans ce soignant
+    # « annule » : RDV sans patient dont ce soignant était le seul participant
+    resultat: str
+
+
+class SuppressionOut(Schema):
+    """Bilan de la suppression (archivage) d'un profil."""
+    utilisateur_id: int
+    role: str
+    rdv_annules: int = 0           # patient : RDV à venir annulés
+    rdv: list[RdvTransfereOut] = []  # soignant : devenir de chaque RDV à venir
 
 
 class MotDePasseChangement(Schema):

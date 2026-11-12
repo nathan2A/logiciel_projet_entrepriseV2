@@ -40,7 +40,14 @@ export interface PatientResume {
   prenom: string;
 }
 
-export interface Patient extends PatientResume {
+/** Coordonnées facultatives d'un profil. */
+export interface Coordonnees {
+  dateNaissance?: string; // AAAA-MM-JJ
+  email?: string;
+  telephone?: string;
+}
+
+export interface Patient extends PatientResume, Coordonnees {
   dateArrivee: string;
   dateDepartPrevue: string | null;
   chambre: Chambre | null;
@@ -53,9 +60,47 @@ export interface SoignantResume {
   profession: string;
 }
 
-export interface Soignant extends SoignantResume {
+export interface Soignant extends SoignantResume, Coordonnees {
   login: string;
   role: RoleBackend;
+}
+
+/* ---------------- Gestion des profils ---------------- */
+
+export type TypeProfil = "patient" | "soignant";
+
+/** Saisie du formulaire de création / modification d'un profil. */
+export interface SaisieProfil {
+  type: TypeProfil;
+  nom: string;
+  prenom: string;
+  dateNaissance: string; // AAAA-MM-JJ
+  email: string;
+  telephone: string;
+  identifiant: string;
+  motDePasse: string; // vide en modification = inchangé
+  profession: string; // soignant
+  chambreId: number | null; // patient
+  dateArrivee: string; // patient
+  dateDepartPrevue: string; // patient (modification) ; vide = inconnue
+}
+
+/** Devenir d'un RDV à venir d'un soignant supprimé. */
+export interface RdvTransfere {
+  rdvId: number;
+  debut: string;
+  fin: string;
+  type: string;
+  patient: string | null;
+  remplacant: string | null;
+  resultat: "meme_heure" | "replanifie" | "en_attente" | "sans_remplacant" | "annule";
+}
+
+export interface ResultatSuppression {
+  utilisateurId: number;
+  role: RoleBackend;
+  rdvAnnules: number; // patient
+  rdv: RdvTransfere[]; // soignant
 }
 
 /** Personne connectée (GET /auth/moi). Les champs facultatifs peuvent manquer côté backend. */

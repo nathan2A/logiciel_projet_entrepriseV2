@@ -1,5 +1,5 @@
 """
-Routes de LECTURE des listes de base : patients, soignants, types de RDV, lieux.
+Routes de LECTURE des listes de base : patients, soignants, types de RDV, lieux, chambres.
 Elles servent surtout à remplir les menus déroulants de l'interface.
 
 Droits :
@@ -24,10 +24,11 @@ router = APIRouter(tags=["Listes de référence"])
     dependencies=[Depends(soignant_connecte)],
 )
 def lister_patients(db: Session = Depends(get_db)):
-    """Tous les patients, avec leur chambre (soignants uniquement)."""
+    """Tous les patients actifs, avec leur chambre (soignants uniquement)."""
     requete = (
         select(m.Patient)
         .options(joinedload(m.Patient.chambre))
+        .where(m.Patient.actif.is_(True))  # profils supprimés (archivés) exclus
         .order_by(m.Patient.nom)
     )
     return db.scalars(requete).all()
@@ -39,8 +40,10 @@ def lister_patients(db: Session = Depends(get_db)):
     dependencies=[Depends(soignant_connecte)],
 )
 def lister_soignants(db: Session = Depends(get_db)):
-    """Tous les soignants, l'administrateur compris (soignants uniquement)."""
-    return db.scalars(select(m.Soignant).order_by(m.Soignant.nom)).all()
+    """Tous les soignants actifs, l'administrateur compris (soignants uniquement)."""
+    return db.scalars(
+        select(m.Soignant).where(m.Soignant.actif.is_(True)).order_by(m.Soignant.nom)
+    ).all()
 
 
 @router.get(
@@ -61,3 +64,13 @@ def lister_types_rdv(db: Session = Depends(get_db)):
 def lister_lieux(db: Session = Depends(get_db)):
     """Les lieux où peut se dérouler un RDV (tout utilisateur connecté)."""
     return db.scalars(select(m.Lieu).order_by(m.Lieu.libelle)).all()
+
+
+@router.get(
+    "/chambres",
+    response_model=list[schemas.ChambreOut],
+    dependencies=[Depends(soignant_connecte)],
+)
+def lister_chambres(db: Session = Depends(get_db)):
+    """Toutes les chambres, par numéro (formulaire de création de profil patient)."""
+    return db.scalars(select(m.Chambre).order_by(m.Chambre.numero)).all()

@@ -1,13 +1,15 @@
 /**
  * Fiche d'un patient, vue par un soignant (en cliquant sur le nom du patient
- * en haut de son agenda). Consultation seule : identité et séjour.
+ * en haut de son agenda). Identité, identification, séjour ; modifier ou
+ * supprimer le profil.
  */
 import { Link, useParams } from "react-router-dom";
 import { EnteteDate } from "@/components/layout/EnteteDate";
+import { ActionsProfil } from "@/components/profils/ActionsProfil";
 import { BandeauHorsLigne, Chargement, ListeVide } from "@/components/ui/Etats";
 import { usePatients } from "@/hooks/useReferentiel";
 import { depuisIso, jjmmaaaa } from "@/utils/dates";
-import { formatNom, formatPrenom } from "@/utils/noms";
+import { formatNom, formatPrenom, identifiantAffiche } from "@/utils/noms";
 import { Section } from "./PageProfil";
 
 const date = (iso?: string | null) => (iso ? jjmmaaaa(depuisIso(iso)) : undefined);
@@ -30,8 +32,12 @@ export function PageFichePatient() {
           lignes={[
             ["Nom", p.nom.toUpperCase()],
             ["Prénom", formatPrenom(p.prenom)],
+            ["Date de naissance", date(p.dateNaissance)],
+            ["Email", p.email],
+            ["Téléphone", p.telephone],
           ]}
         />
+        <Section titre="Identification" lignes={[["Identifiant", identifiantAffiche(p)]]} />
         <Section
           titre="Séjour"
           lignes={[
@@ -40,6 +46,7 @@ export function PageFichePatient() {
             ["Date de sortie prévue", date(p.dateDepartPrevue)],
           ]}
         />
+        <ActionsProfil cible={{ id: p.id, type: "patient", nom: p.nom, prenom: p.prenom }} lienModifier={`/patients/${p.id}/profil/modifier`} />
         <p className="mt-[2rem]">
           <Link to={`/patients/${p.id}/agenda`} className="text-lien underline">
             Retour à l’agenda de {formatNom(p)}

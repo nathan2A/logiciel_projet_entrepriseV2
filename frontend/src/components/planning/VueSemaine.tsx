@@ -5,8 +5,8 @@
  *
  * Si `modifiable` (soignants) : création, modification, suppression et
  * glisser-déposer. Chaque action part au backend ; seule sa réponse fait foi.
- * Si `patientConnecte` (patient) : il ajoute des visites pour lui-même, et
- * modifie ou supprime seulement les visites qu'il a ajoutées.
+ * Si `patientConnecte` (patient) : il ajoute des visites ou des RDV extérieurs
+ * pour lui-même, et modifie ou supprime seulement ceux qu'il a ajoutés.
  */
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -57,9 +57,9 @@ type Formulaire =
 const cleSeance = (r: RendezVous) =>
   `${r.debut}|${r.fin}|${r.type.id}|${r.lieu.id}|${r.soignants.map((s) => s.id).sort((a, b) => a - b).join(",")}`;
 
-/** Une visite que ce patient a ajoutée lui-même : il peut la modifier ou la supprimer. */
+/** Une visite ou un RDV extérieur que ce patient a ajouté lui-même : il peut le modifier ou le supprimer. */
 const visiteDuPatient = (r: RendezVous, p: PatientResume) =>
-  r.type.categorie === "visite" && r.createurId === p.id && r.patient?.id === p.id;
+  (r.type.categorie === "visite" || r.type.categorie === "rdv_exterieur") && r.createurId === p.id && r.patient?.id === p.id;
 
 export function VueSemaine({ titre, lienTitre, patientId, soignantId, modifiable, defautsCreation, patientConnecte, regrouperSeances }: Props) {
   const navigate = useNavigate();

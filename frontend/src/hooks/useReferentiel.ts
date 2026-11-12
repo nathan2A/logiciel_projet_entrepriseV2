@@ -16,6 +16,9 @@ export const usePatients = (actif = true) =>
 export const useSoignants = (actif = true) =>
   useQuery({ queryKey: ["soignants"], queryFn: referentielApi.listerSoignants, staleTime: LONG, enabled: actif });
 
+export const useChambres = (actif = true) =>
+  useQuery({ queryKey: ["chambres"], queryFn: referentielApi.listerChambres, staleTime: LONG, refetchInterval: false, enabled: actif });
+
 /** Chambres et patients présents un jour donné (« 2026-10-22 »). */
 export const useOccupation = (jour: string) =>
   useQuery({

@@ -33,7 +33,13 @@ export interface PatientResumeJSON {
   prenom: string;
 }
 
-export interface PatientJSON extends PatientResumeJSON {
+export interface CoordonneesJSON {
+  date_naissance?: string | null;
+  email?: string | null;
+  telephone?: string | null;
+}
+
+export interface PatientJSON extends PatientResumeJSON, CoordonneesJSON {
   date_arrivee: string;
   date_depart_prevue: string | null;
   chambre: ChambreJSON | null;
@@ -46,9 +52,55 @@ export interface SoignantResumeJSON {
   profession: string;
 }
 
-export interface SoignantJSON extends SoignantResumeJSON {
+export interface SoignantJSON extends SoignantResumeJSON, CoordonneesJSON {
   login: string;
   role: string;
+}
+
+/** GET/POST/PATCH /utilisateurs (UtilisateurOut). */
+export interface UtilisateurJSON extends CoordonneesJSON {
+  id: number;
+  login: string;
+  nom: string;
+  prenom: string;
+  role: string;
+  profession: string | null;
+  date_arrivee: string | null;
+  date_depart_prevue: string | null;
+  chambre_id: number | null;
+  actif: boolean;
+}
+
+/** POST /utilisateurs (CompteCreation) ; PATCH : mêmes champs, tous facultatifs, sans role. */
+export interface CompteJSON {
+  role?: string;
+  login?: string;
+  nom?: string;
+  prenom?: string;
+  mot_de_passe?: string;
+  profession?: string | null;
+  date_arrivee?: string | null;
+  date_depart_prevue?: string | null;
+  chambre_id?: number | null;
+  date_naissance?: string | null;
+  email?: string | null;
+  telephone?: string | null;
+}
+
+/** DELETE /utilisateurs/{id} (SuppressionOut). */
+export interface SuppressionJSON {
+  utilisateur_id: number;
+  role: string;
+  rdv_annules: number;
+  rdv: {
+    rdv_id: number;
+    debut: string;
+    fin: string;
+    type: string;
+    patient: string | null;
+    remplacant: string | null;
+    resultat: string;
+  }[];
 }
 
 /**

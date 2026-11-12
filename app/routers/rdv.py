@@ -9,7 +9,7 @@ Un RDV a zéro, un ou plusieurs soignants, et zéro ou un patient
 
 Droits :
 - Patient : voit UNIQUEMENT ses propres RDV. Il peut créer des RDV de type
-  « Visite » pour lui-même, sans soignant, et modifier ou annuler les visites
+  « Visite » ou « RDV extérieur » pour lui-même, sans soignant, et modifier ou annuler les visites
   qu'il a créées lui-même. Rien d'autre.
 - Soignant et administrateur : voient tous les RDV, peuvent créer, modifier, annuler.
 
@@ -23,7 +23,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app import conflits
@@ -50,12 +50,15 @@ def _rdv_ou_404(db: Session, rdv_id: int) -> m.RDV:
 
 
 def _est_visite(type_rdv: Optional[m.TypeRDV]) -> bool:
-    """Vrai si le type de RDV est « Visite » (accents et majuscules ignorés)."""
+    """
+    Vrai si le type fait partie de ceux qu'un patient peut s'ajouter lui-même :
+    « Visite » ou « RDV extérieur » (accents et majuscules ignorés).
+    """
     if type_rdv is None:
         return False
     libelle = unicodedata.normalize("NFD", type_rdv.libelle)
     libelle = "".join(c for c in libelle if unicodedata.category(c) != "Mn").lower()
-    return libelle.startswith("visite")
+    return libelle.startswith("visite") or "exterieur" in libelle
 
 
 def _soignants_ou_404(db: Session, ids: list[int]) -> list[m.Soignant]:
@@ -63,7 +66,7 @@ def _soignants_ou_404(db: Session, ids: list[int]) -> list[m.Soignant]:
     trouves = []
     for soignant_id in dict.fromkeys(ids):
         soignant = db.get(m.Soignant, soignant_id)
-        if soignant is None:
+        if soignant is None or not soignant.actif:
             raise HTTPException(status_code=404, detail=f"Soignant {soignant_id} introuvable.")
         trouves.append(soignant)
     return trouves
@@ -78,7 +81,8 @@ def _verifier_liens(db: Session, donnees: dict):
     ]
     for champ, modele, nom in verifications:
         if champ in donnees and donnees[champ] is not None:
-            if db.get(modele, donnees[champ]) is None:
+            objet = db.get(modele, donnees[champ])
+            if objet is None or getattr(objet, "actif", True) is False:  # profil supprimé
                 raise HTTPException(
                     status_code=404, detail=f"{nom} {donnees[champ]} introuvable."
                 )
@@ -122,6 +126,9 @@ def lister_rdv(
         patient_id = utilisateur.id  # on force le filtre : il ne verra que ses RDV
 
     requete = select(m.RDV).options(*CHARGER_LIENS)
+    # Les RDV d'un patient dont le profil a été supprimé restent dans
+    # l'historique de la base mais ne sont plus affichés.
+    requete = requete.where(or_(m.RDV.patient_id.is_(None), m.RDV.patient.has(m.Patient.actif.is_(True))))
     if patient_id is not None:
         requete = requete.where(m.RDV.patient_id == patient_id)
     if soignant_id is not None:
@@ -163,7 +170,7 @@ def creer_rdv(
 
     if isinstance(utilisateur, m.Patient):
         if not _est_visite(db.get(m.TypeRDV, donnees.type_id)):
-            raise HTTPException(status_code=403, detail="Un patient ne peut ajouter que des visites.")
+            raise HTTPException(status_code=403, detail="Un patient ne peut ajouter que des visites ou des RDV extérieurs.")
         if donnees.patient_id not in (None, utilisateur.id):
             raise HTTPException(status_code=403, detail="Vous ne pouvez ajouter une visite que pour vous-même.")
         if donnees.soignant_ids:
@@ -208,7 +215,7 @@ def modifier_rdv(
         if changements.get("soignant_ids"):
             raise HTTPException(status_code=403, detail="Une visite ajoutée par un patient n'a pas de soignant.")
         if "type_id" in changements and not _est_visite(db.get(m.TypeRDV, changements["type_id"])):
-            raise HTTPException(status_code=403, detail="Un patient ne peut ajouter que des visites.")
+            raise HTTPException(status_code=403, detail="Un patient ne peut ajouter que des visites ou des RDV extérieurs.")
         changements.pop("statut", None)  # le statut d'une visite ne change pas par ce biais
 
     debut = changements.get("debut", rdv.debut)

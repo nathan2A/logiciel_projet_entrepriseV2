@@ -50,7 +50,9 @@ def _synchroniser_jour(db: Session, jour: date) -> schemas.JourSynchroniseOut:
     if en_attente == 0:
         return schemas.JourSynchroniseOut(jour=jour, statut="rien_a_planifier")
 
-    planificateur = PlanificateurJournee(db, jour, ConfigPlanification(ignorer_rdv_sans_horaire=True))
+    planificateur = PlanificateurJournee(
+        db, jour, ConfigPlanification(ignorer_rdv_sans_horaire=True, pas_avant=datetime.now())
+    )
     resultat = planificateur.planifier()
     sortie = schemas.JourSynchroniseOut(
         jour=jour,

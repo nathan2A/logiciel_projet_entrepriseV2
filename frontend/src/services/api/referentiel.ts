@@ -1,8 +1,13 @@
-/** Listes de référence : patients, soignants, types de RDV, lieux. */
-import type { Lieu, Patient, Soignant, TypeRdv } from "@/types";
+/** Listes de référence : patients, soignants, types de RDV, lieux, chambres. */
+import type { Chambre, Lieu, Patient, Soignant, TypeRdv } from "@/types";
 import { appeler } from "./client";
-import { versLieu, versPatient, versSoignant, versTypeRdv } from "./adaptateurs";
-import type { LieuJSON, PatientJSON, SoignantJSON, TypeRDVJSON } from "./backendTypes";
+import { versChambre, versLieu, versPatient, versSoignant, versTypeRdv } from "./adaptateurs";
+import type { ChambreJSON, LieuJSON, PatientJSON, SoignantJSON, TypeRDVJSON } from "./backendTypes";
+
+/** GET /chambres (soignants uniquement). */
+export async function listerChambres(): Promise<Chambre[]> {
+  return (await appeler<ChambreJSON[]>({ methode: "GET", chemin: "/chambres" })).map(versChambre);
+}
 
 /** GET /patients (soignants uniquement). */
 export async function listerPatients(): Promise<Patient[]> {

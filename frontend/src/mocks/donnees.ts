@@ -17,6 +17,7 @@ export interface UtilisateurMock {
   date_naissance?: string;
   email?: string;
   telephone?: string;
+  actif?: boolean; // false : profil supprimé (archivé)
   // patients
   date_arrivee?: string;
   date_depart_prevue?: string | null;

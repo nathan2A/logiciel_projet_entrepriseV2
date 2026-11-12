@@ -57,6 +57,7 @@ def plan_du_service(
     # Patients présents ce jour-là (entre leur arrivée et leur départ prévu)
     presents = db.scalars(
         select(m.Patient).where(
+            m.Patient.actif.is_(True),
             m.Patient.date_arrivee <= jour,
             (m.Patient.date_depart_prevue.is_(None)) | (m.Patient.date_depart_prevue >= jour),
         )

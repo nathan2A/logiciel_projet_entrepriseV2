@@ -268,6 +268,14 @@ class ConfigPlanification:
     #   True : ces RDV sont écartés (listés dans `ignores`), les autres sont planifiés.
     ignorer_rdv_sans_horaire: bool = False
 
+    # Ne planifier que ces RDV en attente (None : tous ceux de la journée).
+    # Les autres RDV en attente sont laissés tels quels et ne bloquent rien.
+    rdv_ids: Optional[set[int]] = None
+
+    # Aucun RDV placé avant cet instant (ex. maintenant, pour ne rien placer
+    # dans le passé de la journée en cours). None : pas de limite.
+    pas_avant: Optional[datetime] = None
+
     temps_limite_secondes: float = TEMPS_LIMITE_SECONDES
     nb_workers: int = 8
 
@@ -466,6 +474,7 @@ class PlanificateurJournee:
         db, jour = self.db, self.jour
         self.patients = (
             db.query(Patient)
+            .filter(Patient.actif.is_(True))  # profils archivés exclus
             .filter(Patient.date_arrivee <= jour)
             .filter((Patient.date_depart_prevue.is_(None)) | (Patient.date_depart_prevue >= jour))
             .all()
@@ -521,6 +530,8 @@ class PlanificateurJournee:
         for r in self.rdvs:
             if r.statut != STATUT_EN_ATTENTE:
                 continue
+            if self.config.rdv_ids is not None and r.id not in self.config.rdv_ids:
+                continue  # hors du périmètre demandé : ni planifié, ni bloquant
             raison = None
             if r.patient_id is None and not r.soignants:
                 raison = "RDV sans patient ni soignant."
@@ -687,7 +698,12 @@ class PlanificateurJournee:
 
     def ajouter_contraintes_metier(self):
         """Horaires des soignants, plages obligatoires/souhaitées, ordre toilette -> rééducation."""
+        pas_avant = None
+        if self.config.pas_avant is not None and self.config.pas_avant > self.debut_jour:
+            pas_avant = min(HORIZON, _tranches_haut((self.config.pas_avant - self.debut_jour).total_seconds() / 60))
         for t in self.taches.values():
+            if pas_avant is not None:
+                self.model.Add(t.debut >= pas_avant)
             # A. Le créneau respecte les horaires de CHAQUE soignant du RDV.
             for s in t.rdv.soignants:
                 debut_service, fin_service = horaires_soignant(s)

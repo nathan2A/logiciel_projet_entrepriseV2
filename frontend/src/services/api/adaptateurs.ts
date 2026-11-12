@@ -51,6 +51,9 @@ export const versPatient = (p: PatientJSON): Patient => ({
   dateArrivee: p.date_arrivee,
   dateDepartPrevue: p.date_depart_prevue,
   chambre: p.chambre ? versChambre(p.chambre) : null,
+  dateNaissance: vide(p.date_naissance),
+  email: vide(p.email),
+  telephone: vide(p.telephone),
 });
 
 export const versSoignant = (s: SoignantJSON): Soignant => ({
@@ -60,6 +63,9 @@ export const versSoignant = (s: SoignantJSON): Soignant => ({
   prenom: s.prenom,
   profession: s.profession,
   role: s.role as RoleBackend,
+  dateNaissance: vide(s.date_naissance),
+  email: vide(s.email),
+  telephone: vide(s.telephone),
 });
 
 export function versUtilisateur(m: MoiJSON): Utilisateur {

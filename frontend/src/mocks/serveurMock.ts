@@ -8,9 +8,14 @@
  *
  * Connexion : n'importe quel mot de passe est accepté ; l'identifiant est
  * « NOM Prénom » d'une personne des données (ex. « DUPONT Daniel »).
+ *
+ * Gestion des profils (/utilisateurs) : mêmes règles que le backend (doublon
+ * nom + prénom + date de naissance, suppression = archivage). Le transfert des
+ * RDV d'un soignant supprimé est simplifié (pas de solveur).
  */
 import type { Reponse, Requete, Transport } from "@/services/api/client";
-import type { ConflitJSON, RDVCreationJSON, RDVJSON } from "@/services/api/backendTypes";
+import type { CompteJSON, ConflitJSON, RDVCreationJSON, RDVJSON, SuppressionJSON } from "@/services/api/backendTypes";
+import { versIsoLocal } from "@/utils/dates";
 import { formatNom } from "@/utils/noms";
 import { chambres, genererRdv, lieux, typesRdv, utilisateurs, type RdvMock, type UtilisateurMock } from "./donnees";
 
@@ -29,10 +34,14 @@ const JETON_PREFIXE = "mock-jeton-";
 
 function utilisateurDuJeton(jeton?: string | null): UtilisateurMock | undefined {
   if (!jeton?.startsWith(JETON_PREFIXE)) return undefined;
-  return utilisateurs.find((u) => u.id === Number(jeton.slice(JETON_PREFIXE.length)));
+  return utilisateurs.find((u) => u.id === Number(jeton.slice(JETON_PREFIXE.length)) && actif(u));
 }
 
 const estSoignant = (u: UtilisateurMock) => u.role !== "patient";
+const actif = (u: UtilisateurMock) => u.actif !== false;
+const coordonnees = (u: UtilisateurMock) => ({
+  date_naissance: u.date_naissance ?? null, email: u.email ?? null, telephone: u.telephone ?? null,
+});
 
 /* ----------------------------- Sérialisation ----------------------------- */
 
@@ -42,7 +51,19 @@ function patientJSON(u: UtilisateurMock) {
   return {
     id: u.id, login: u.login, nom: u.nom, prenom: u.prenom,
     date_arrivee: u.date_arrivee!, date_depart_prevue: u.date_depart_prevue ?? null,
-    chambre: chambreJSON(u.chambre_id),
+    chambre: chambreJSON(u.chambre_id), ...coordonnees(u),
+  };
+}
+
+function soignantJSON(u: UtilisateurMock) {
+  return { id: u.id, login: u.login, nom: u.nom, prenom: u.prenom, profession: u.profession, role: u.role, ...coordonnees(u) };
+}
+
+function utilisateurJSON(u: UtilisateurMock) {
+  return {
+    id: u.id, login: u.login, nom: u.nom, prenom: u.prenom, role: u.role, profession: u.profession ?? null,
+    date_arrivee: u.date_arrivee ?? null, date_depart_prevue: u.date_depart_prevue ?? null, chambre_id: u.chambre_id ?? null,
+    actif: actif(u), ...coordonnees(u),
   };
 }
 
@@ -195,10 +216,13 @@ function verifierLiens(c: Partial<RDVCreationJSON>): Reponse | null {
   return null;
 }
 
-const estVisite = (typeId: number | undefined) =>
-  normaliser(typesRdv.find((t) => t.id === typeId)?.libelle ?? "").startsWith("visite");
+/** Types qu'un patient peut ajouter lui-même : visites et RDV extérieurs. */
+const estVisite = (typeId: number | undefined) => {
+  const l = normaliser(typesRdv.find((t) => t.id === typeId)?.libelle ?? "");
+  return l.startsWith("visite") || l.includes("exterieur");
+};
 
-/** Un patient ne gère que les visites qu'il a créées lui-même, pour lui-même. */
+/** Un patient ne gère que les visites (ou RDV extérieurs) qu'il a créés lui-même, pour lui-même. */
 const patientPeutGerer = (moi: UtilisateurMock, r: RdvMock) =>
   r.createur_id === moi.id && r.patient_id === moi.id && estVisite(r.type_id);
 
@@ -212,6 +236,121 @@ function enregistrer(candidat: RdvMock, creation: boolean): Reponse {
   return ok({ ...rdvJSON(candidat), conflits: calculerConflits(candidat) }, creation ? 201 : 200);
 }
 
+/* ----------------------------- Gestion des profils ----------------------------- */
+
+const cleProfession = (p?: string) => normaliser(p ?? "");
+const nomAffiche = (u: UtilisateurMock) => formatNom(u);
+
+function verifierProfil(c: CompteJSON, sauf?: number): Reponse | null {
+  if (c.login !== undefined && c.login.trim().length < 3) return erreur(422, "L'identifiant doit faire au moins 3 caractères.");
+  if (c.mot_de_passe !== undefined && c.mot_de_passe.length < 8) return erreur(422, "Le mot de passe doit faire au moins 8 caractères.");
+  if (c.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(c.email)) return erreur(422, "Adresse email invalide.");
+  const autres = utilisateurs.filter((u) => u.id !== sauf);
+  if (c.login !== undefined && autres.some((u) => normaliser(u.login) === normaliser(c.login!)))
+    return erreur(409, `L'identifiant « ${c.login} » est déjà utilisé.`);
+  const existant = c.date_naissance
+    ? autres.find((u) => actif(u) && normaliser(u.nom) === normaliser(c.nom ?? "") && normaliser(u.prenom) === normaliser(c.prenom ?? "")
+        && u.date_naissance === c.date_naissance)
+    : undefined;
+  if (existant) {
+    const [a, m, j] = c.date_naissance!.split("-");
+    return erreur(409, {
+      code: "PROFIL_EXISTANT",
+      message: `Un profil existe déjà pour ${nomAffiche(existant)}, né(e) le ${j}/${m}/${a} (identifiant « ${existant.login} »).`,
+    });
+  }
+  return null;
+}
+
+/** Version simplifiée du transfert backend : même heure si un collègue est libre, sinon en attente. */
+function transfererRdv(s: UtilisateurMock): SuppressionJSON["rdv"] {
+  const maintenant = versIsoLocal(new Date());
+  const collegues = utilisateurs.filter((u) => estSoignant(u) && actif(u) && u.id !== s.id && cleProfession(u.profession) === cleProfession(s.profession));
+  // Les autres RDV d'une même séance de groupe (même horaire, type et lieu) ne comptent pas
+  const memeSeance = (x: RdvMock, r: RdvMock) => x.debut === r.debut && x.fin === r.fin && x.type_id === r.type_id && x.lieu_id === r.lieu_id;
+  const libre = (c: UtilisateurMock, r: RdvMock) =>
+    !rdvs.some((x) => x.id !== r.id && !memeSeance(x, r) && x.statut === "planifie" && x.soignant_ids.includes(c.id) && x.debut < r.fin && r.debut < x.fin);
+  const bilan: SuppressionJSON["rdv"] = [];
+  rdvs
+    .filter((r) => r.soignant_ids.includes(s.id) && (r.statut === "planifie" || r.statut === "en_attente") && r.debut >= maintenant)
+    .forEach((r) => {
+      const restants = r.soignant_ids.filter((id) => id !== s.id);
+      const remplacant = collegues.find((c) => !restants.includes(c.id) && libre(c, r)) ?? collegues[0];
+      let resultat = "sans_remplacant";
+      if (remplacant) {
+        resultat = libre(remplacant, r) ? "meme_heure" : "en_attente";
+        if (resultat === "en_attente") r.statut = "en_attente";
+        if (!restants.includes(remplacant.id)) restants.push(remplacant.id);
+      } else if (r.patient_id == null && restants.length === 0) {
+        r.statut = "annule";
+        resultat = "annule";
+      }
+      if (resultat !== "annule") r.soignant_ids = restants;
+      const p = utilisateurs.find((u) => u.id === r.patient_id);
+      bilan.push({
+        rdv_id: r.id, debut: r.debut, fin: r.fin, type: typesRdv.find((t) => t.id === r.type_id)!.libelle,
+        patient: p ? nomAffiche(p) : null, remplacant: remplacant ? nomAffiche(remplacant) : null, resultat,
+      });
+    });
+  return bilan;
+}
+
+function routesComptes(r: Requete): Reponse {
+  const { methode, chemin } = r;
+  if (chemin === "/utilisateurs") {
+    if (methode === "GET") return ok(utilisateurs.filter(actif).map(utilisateurJSON));
+    if (methode === "POST") {
+      const c = (r.json ?? {}) as CompteJSON;
+      const refus = verifierProfil(c);
+      if (refus) return refus;
+      const u: UtilisateurMock = {
+        id: Math.max(...utilisateurs.map((x) => x.id)) + 1,
+        login: c.login!.trim(), nom: c.nom!.trim(), prenom: c.prenom!.trim(),
+        role: c.role === "patient" ? "patient" : "administrateur",
+        date_naissance: c.date_naissance ?? undefined, email: c.email ?? undefined, telephone: c.telephone ?? undefined,
+        ...(c.role === "patient"
+          ? { date_arrivee: c.date_arrivee!, date_depart_prevue: c.date_depart_prevue ?? null, chambre_id: c.chambre_id ?? null }
+          : { profession: c.profession! }),
+      };
+      utilisateurs.push(u);
+      return ok(utilisateurJSON(u), 201);
+    }
+    return erreur(405, "Method Not Allowed");
+  }
+  const id = Number(chemin.split("/")[2]);
+  const u = utilisateurs.find((x) => x.id === id && actif(x));
+  if (!u) return erreur(404, `Utilisateur ${id} introuvable.`);
+  if (methode === "GET") return ok(utilisateurJSON(u));
+  if (methode === "PATCH") {
+    const c = (r.json ?? {}) as CompteJSON;
+    const refus = verifierProfil({ nom: u.nom, prenom: u.prenom, date_naissance: u.date_naissance, ...c }, u.id);
+    if (refus) return refus;
+    const { mot_de_passe: _mdp, role: _role, ...champs } = c;
+    Object.entries(champs).forEach(([k, v]) => {
+      if (u.role === "patient" && k === "profession") return;
+      if (u.role !== "patient" && ["date_arrivee", "date_depart_prevue", "chambre_id"].includes(k)) return;
+      (u as unknown as Record<string, unknown>)[k] = v ?? undefined;
+    });
+    if (u.role === "patient") u.date_depart_prevue = u.date_depart_prevue ?? null;
+    return ok(utilisateurJSON(u));
+  }
+  if (methode === "DELETE") {
+    if (u.role === "patient") {
+      const maintenant = versIsoLocal(new Date());
+      const aVenir = rdvs.filter((x) => x.patient_id === u.id && x.debut >= maintenant && (x.statut === "planifie" || x.statut === "en_attente"));
+      aVenir.forEach((x) => (x.statut = "annule"));
+      u.actif = false;
+      return ok({ utilisateur_id: u.id, role: u.role, rdv_annules: aVenir.length, rdv: [] } satisfies SuppressionJSON);
+    }
+    if (!utilisateurs.some((x) => estSoignant(x) && actif(x) && x.id !== u.id))
+      return erreur(409, "C'est le dernier soignant actif : il ne peut pas être supprimé.");
+    u.actif = false;
+    const rdv = transfererRdv(u);
+    return ok({ utilisateur_id: u.id, role: u.role, rdv_annules: 0, rdv } satisfies SuppressionJSON);
+  }
+  return erreur(405, "Method Not Allowed");
+}
+
 /* ----------------------------- Routes ----------------------------- */
 
 function router(r: Requete): Reponse {
@@ -219,7 +358,7 @@ function router(r: Requete): Reponse {
 
   if (methode === "POST" && chemin === "/auth/connexion") {
     const identifiant = normaliser(r.formulaire?.username ?? "");
-    const u = utilisateurs.find((x) => normaliser(x.login) === identifiant);
+    const u = utilisateurs.find((x) => normaliser(x.login) === identifiant && actif(x));
     if (!u) return erreur(401, "Login ou mot de passe incorrect.");
     return ok({ access_token: `${JETON_PREFIXE}${u.id}`, token_type: "bearer" });
   }
@@ -235,9 +374,7 @@ function router(r: Requete): Reponse {
       chambre: chambreJSON(moi.chambre_id),
       date_arrivee: moi.date_arrivee ?? null,
       date_depart_prevue: moi.date_depart_prevue ?? null,
-      date_naissance: moi.date_naissance ?? null,
-      email: moi.email ?? null,
-      telephone: moi.telephone ?? null,
+      ...coordonnees(moi),
     });
   }
 
@@ -245,12 +382,15 @@ function router(r: Requete): Reponse {
   if (methode === "GET" && chemin === "/lieux") return ok(lieux);
 
   if (methode === "GET" && chemin === "/patients") {
-    return reserveSoignant() ?? ok(utilisateurs.filter((u) => u.role === "patient").map(patientJSON));
+    return reserveSoignant() ?? ok(utilisateurs.filter((u) => u.role === "patient" && actif(u)).map(patientJSON));
   }
   if (methode === "GET" && chemin === "/soignants") {
-    return reserveSoignant() ?? ok(
-      utilisateurs.filter(estSoignant).map((u) => ({ id: u.id, login: u.login, nom: u.nom, prenom: u.prenom, profession: u.profession, role: u.role })),
-    );
+    return reserveSoignant() ?? ok(utilisateurs.filter((u) => estSoignant(u) && actif(u)).map(soignantJSON));
+  }
+  if (methode === "GET" && chemin === "/chambres") return reserveSoignant() ?? ok(chambres);
+
+  if (chemin === "/utilisateurs" || chemin.startsWith("/utilisateurs/")) {
+    return reserveSoignant() ?? routesComptes(r);
   }
 
   if (methode === "GET" && chemin === "/plan") {
@@ -258,7 +398,7 @@ function router(r: Requete): Reponse {
     if (refus) return refus;
     const jour = String(r.query?.moment ?? new Date().toISOString()).slice(0, 10);
     const presents = utilisateurs.filter(
-      (u) => u.role === "patient" && u.date_arrivee! <= jour && (!u.date_depart_prevue || u.date_depart_prevue >= jour),
+      (u) => u.role === "patient" && actif(u) && u.date_arrivee! <= jour && (!u.date_depart_prevue || u.date_depart_prevue >= jour),
     );
     const resume = (u: UtilisateurMock) => ({ patient: { id: u.id, login: u.login, nom: u.nom, prenom: u.prenom }, rdv_en_cours: null });
     return ok({
@@ -300,7 +440,8 @@ function router(r: Requete): Reponse {
     const du = q.du ? String(q.du) : undefined;
     const au = q.au ? String(q.au) : undefined;
     const liste = rdvs
-      .filter((x) => (patientId === undefined || x.patient_id === patientId)
+      .filter((x) => (x.patient_id == null || actif(utilisateurs.find((u) => u.id === x.patient_id)!))
+        && (patientId === undefined || x.patient_id === patientId)
         && (soignantId === undefined || x.soignant_ids.includes(soignantId))
         && (!du || x.debut >= du) && (!au || x.debut < au))
       .sort((a, b) => a.debut.localeCompare(b.debut) || a.id - b.id)
@@ -333,7 +474,7 @@ function router(r: Requete): Reponse {
         if ("patient_id" in changements && changements.patient_id !== moi.id) return erreur(403, "Une visite reste à votre nom.");
         if (changements.soignant_ids?.length) return erreur(403, "Une visite ajoutée par un patient n'a pas de soignant.");
         if (changements.type_id !== undefined && !estVisite(changements.type_id))
-          return erreur(403, "Un patient ne peut ajouter que des visites.");
+          return erreur(403, "Un patient ne peut ajouter que des visites ou des RDV extérieurs.");
       }
       const candidat: RdvMock = { ...existant };
       (Object.keys(changements) as (keyof RDVCreationJSON)[]).forEach((k) => {
@@ -356,7 +497,7 @@ function router(r: Requete): Reponse {
     let patientId = c.patient_id ?? null;
     if (moi.role === "patient") {
       // Un patient ne peut ajouter qu'une visite, pour lui-même, sans soignant
-      if (!estVisite(c.type_id)) return erreur(403, "Un patient ne peut ajouter que des visites.");
+      if (!estVisite(c.type_id)) return erreur(403, "Un patient ne peut ajouter que des visites ou des RDV extérieurs.");
       if (patientId !== null && patientId !== moi.id) return erreur(403, "Vous ne pouvez ajouter une visite que pour vous-même.");
       if (c.soignant_ids?.length) return erreur(403, "Une visite ajoutée par un patient n'a pas de soignant.");
       patientId = moi.id;

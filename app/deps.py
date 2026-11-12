@@ -43,7 +43,7 @@ def utilisateur_courant(
     if utilisateur_id is None:
         raise erreur
     utilisateur = db.get(m.Utilisateur, utilisateur_id)
-    if utilisateur is None:
+    if utilisateur is None or not utilisateur.actif:  # profil supprimé : session terminée
         raise erreur
     return utilisateur
 

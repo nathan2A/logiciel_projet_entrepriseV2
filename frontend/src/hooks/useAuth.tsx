@@ -16,6 +16,8 @@ interface ValeurAuth {
   peutModifier: boolean; // soignants uniquement
   connexion: (identifiant: string, motDePasse: string) => Promise<Utilisateur>;
   deconnexion: () => void;
+  /** Relit /auth/moi (après modification de son propre profil). */
+  rafraichir: () => Promise<void>;
 }
 
 const ContexteAuth = createContext<ValeurAuth | null>(null);
@@ -57,9 +59,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return u;
   }, []);
 
+  const rafraichir = useCallback(async () => {
+    setUtilisateur(await authApi.moi());
+  }, []);
+
   const valeur = useMemo<ValeurAuth>(
-    () => ({ statut, utilisateur, peutModifier: utilisateur?.role === "soignant", connexion, deconnexion }),
-    [statut, utilisateur, connexion, deconnexion],
+    () => ({ statut, utilisateur, peutModifier: utilisateur?.role === "soignant", connexion, deconnexion, rafraichir }),
+    [statut, utilisateur, connexion, deconnexion, rafraichir],
   );
 
   return <ContexteAuth.Provider value={valeur}>{children}</ContexteAuth.Provider>;

@@ -3,8 +3,10 @@
  * (maquette 15 pour le patient, 14 pour le soignant).
  * Les champs que le backend ne fournit pas encore s'affichent « Non renseigné ».
  * Le mot de passe n'est jamais renvoyé par le backend : il est masqué.
+ * Un soignant peut modifier ou supprimer son propre profil.
  */
 import { EnteteDate } from "@/components/layout/EnteteDate";
+import { ActionsProfil } from "@/components/profils/ActionsProfil";
 import { useUtilisateur } from "@/hooks/useAuth";
 import { useSoignants } from "@/hooks/useReferentiel";
 import { depuisIso, jjmmaaaa } from "@/utils/dates";
@@ -68,6 +70,9 @@ export function PageProfil() {
               ["Date de sortie prévue", u.dateDepartPrevue ? date(u.dateDepartPrevue) : undefined],
             ]}
           />
+        )}
+        {u.role === "soignant" && (
+          <ActionsProfil cible={{ id: u.id, type: "soignant", nom: u.nom, prenom: u.prenom }} lienModifier="/profil/modifier" />
         )}
       </div>
     </div>

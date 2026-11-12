@@ -11,7 +11,8 @@
  * avec seulement un jour et une durée ; le solveur choisit l'heure au prochain
  * « Synchroniser ». Décocher la case redonne un horaire fixe.
  *
- * Mode patient : le patient ajoute ou modifie une visite pour lui-même.
+ * Mode patient : le patient ajoute ou modifie une visite ou un RDV extérieur
+ * pour lui-même (lieu « Extérieur » proposé pour un RDV extérieur).
  * Nom RDV = Visite, Soignant(s) = Aucun et Patient = lui-même sont imposés ;
  * le lieu est « Chambre du patient » par défaut et reste modifiable.
  */
@@ -45,30 +46,21 @@ const sansAccents = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g
 const DUREES = Array.from({ length: 48 }, (_, i) => (i + 1) * 5); // 5 min à 4 h
 const HEURE_PROVISOIRE = 8 * 60; // horaire provisoire d'un RDV en attente (seule la durée compte)
 
-const HEURES = Array.from({ length: 24 }, (_, h) => String(h).padStart(2, "0"));
-const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
-
-/** Choix d'une heure : heures 00-23, minutes par pas de 5. */
+/**
+ * Choix d'une heure : champ où l'on peut écrire l'heure au clavier (« 14:35 »),
+ * les flèches avancent par pas de 5 minutes.
+ */
 function ChoixHeure({ id, valeur, onChange, libelle }: { id: string; valeur: string; onChange: (v: string) => void; libelle: string }) {
-  const [h, m] = valeur ? [valeur.slice(0, 2), valeur.slice(3, 5)] : ["", ""];
-  // Un RDV existant à une minute « hors pas » (10:07) garde sa valeur
-  const minutes = m && !MINUTES.includes(m) ? [...MINUTES, m].sort() : MINUTES;
   return (
-    <span className="inline-flex items-baseline">
-      <select id={id} aria-label={`${libelle} (heures)`} className="champ-rdv" value={h} onChange={(e) => onChange(`${e.target.value}:${m || "00"}`)}>
-        {!h && <option value="">--</option>}
-        {HEURES.map((x) => (
-          <option key={x} value={x}>{x}</option>
-        ))}
-      </select>
-      <span aria-hidden className="px-[0.1rem]">h</span>
-      <select aria-label={`${libelle} (minutes)`} className="champ-rdv" value={m} onChange={(e) => onChange(`${h || "00"}:${e.target.value}`)}>
-        {!m && <option value="">--</option>}
-        {minutes.map((x) => (
-          <option key={x} value={x}>{x}</option>
-        ))}
-      </select>
-    </span>
+    <input
+      id={id}
+      type="time"
+      step={300}
+      aria-label={libelle}
+      className="champ-rdv not-italic"
+      value={valeur}
+      onChange={(e) => onChange(e.target.value.slice(0, 5))}
+    />
   );
 }
 
@@ -126,6 +118,18 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
     if (finChoisie || !debut || !type) return;
     setHeureFin(hhmm(minutes(debut) + type.dureeParDefaut));
     setDuree(Math.ceil(type.dureeParDefaut / 5) * 5);
+  };
+
+  // Mode patient : seulement « Visite » et « RDV extérieur »
+  const typesPatient = useMemo(
+    () => (types.data ?? []).filter((t) => t.categorie === "visite" || t.categorie === "rdv_exterieur"),
+    [types.data],
+  );
+  const lieuPourType = (t: TypeRdv | undefined) => {
+    const l = (lieux.data ?? []).find((x) =>
+      t?.categorie === "rdv_exterieur" ? sansAccents(x.libelle).includes("exterieur") : sansAccents(x.libelle).includes("chambre"),
+    );
+    if (l) setLieuId(String(l.id));
   };
 
   // Mode patient : Nom RDV = Visite, lieu = Chambre du patient par défaut
@@ -235,7 +239,23 @@ export function RdvFormModal({ mode, initiale, original, onValider, onSupprimer,
         >
           <Ligne libelle="Nom RDV" id={modePatient ? undefined : ids.type}>
             {modePatient ? (
-              <span className="italic text-[#333]">{typeChoisi?.libelle ?? "Visite"}</span>
+              <select
+                aria-label="Nom RDV"
+                className="champ-rdv min-w-0 flex-1"
+                value={typeId}
+                onChange={(e) => {
+                  const t = typesPatient.find((x) => String(x.id) === e.target.value);
+                  setTypeId(e.target.value);
+                  ajusterFin(heureDebut, t);
+                  lieuPourType(t);
+                }}
+              >
+                {typesPatient.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.libelle}
+                  </option>
+                ))}
+              </select>
             ) : (
             <select
               id={ids.type}

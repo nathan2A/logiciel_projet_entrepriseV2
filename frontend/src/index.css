@@ -48,3 +48,52 @@ body {
     @apply border-solid border-erreur;
   }
 }
+
+/*
+ * Barres de défilement grises toujours visibles (sur Mac, elles ne s'affichaient
+ * qu'au survol ou pendant le défilement). Même aspect que la barre au survol.
+ */
+::-webkit-scrollbar {
+  width: 0.7rem;
+  height: 0.7rem;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #8a8a8a;
+  border-radius: 999px;
+  border: 0.15rem solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: #6b6b6b;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+/* Firefox (les propriétés standard désactiveraient le style ci-dessus dans Chrome) */
+@supports (-moz-appearance: none) {
+  * {
+    scrollbar-color: #8a8a8a transparent;
+  }
+}
+
+/*
+ * Unités : pastilles de RDV de longueur proportionnelle à la durée.
+ * Le texte s'adapte à la place disponible : horaire complet, sinon l'heure de
+ * début seule, sinon rien (horaire complet au survol et dans l'infobulle).
+ */
+.pastille-unite {
+  container-type: inline-size;
+}
+.pastille-unite .horaire-debut {
+  display: none;
+}
+@container (max-width: 3.9rem) {
+  .pastille-unite .horaire-complet { display: none; }
+  .pastille-unite .horaire-debut { display: inline; }
+}
+@container (max-width: 1.3rem) {
+  .pastille-unite .horaire-debut { display: none; }
+}
