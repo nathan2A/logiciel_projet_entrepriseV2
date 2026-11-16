@@ -33,13 +33,13 @@ de configuration.
 
 from __future__ import annotations
 
+import logging
 import math
 import time as chrono
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
-from ortools.sat.python import cp_model
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, joinedload, selectinload
 
@@ -52,6 +52,37 @@ from app.models import (
     STATUT_PLANIFIE,
     TypeRDV,
     rdv_soignants,
+)
+
+
+# --------------------------------------------------------------------------
+# OR-Tools : chargé s'il est disponible
+# --------------------------------------------------------------------------
+# Sur certains ordinateurs, OR-Tools ne peut pas être chargé. Par exemple,
+# Windows 11 (« Contrôle intelligent des applications ») bloque sa
+# bibliothèque : « OSError: [WinError 4551] Une stratégie de contrôle
+# d'application a bloqué ce fichier ». Le serveur démarre quand même :
+# seul le calcul de planning (bouton « Synchroniser », replacement des RDV
+# d'un soignant supprimé) est indisponible sur cet ordinateur.
+try:
+    from ortools.sat.python import cp_model
+
+    ORTOOLS_DISPONIBLE = True
+    ERREUR_ORTOOLS = ""
+except (ImportError, OSError) as _erreur:
+    cp_model = None
+    ORTOOLS_DISPONIBLE = False
+    ERREUR_ORTOOLS = f"{type(_erreur).__name__}: {_erreur}"
+    logging.getLogger(__name__).warning(
+        "OR-Tools ne peut pas être chargé (%s). Le serveur démarre, mais le solveur "
+        "(bouton « Synchroniser ») est indisponible sur cet ordinateur.",
+        ERREUR_ORTOOLS,
+    )
+
+MESSAGE_SOLVEUR_INDISPONIBLE = (
+    "Le solveur OR-Tools ne peut pas être chargé sur cet ordinateur "
+    "(par exemple bloqué par la sécurité de Windows) : le planning automatique "
+    "est indisponible ici. Il fonctionne sur un ordinateur où OR-Tools se charge."
 )
 
 
@@ -335,6 +366,7 @@ class ResultatPlanification:
         "inconnu"              aucune solution dans le délai, SANS preuve d'impossibilité
         "donnees_incompletes"  données insuffisantes (ex. soignant sans horaire connu)
         "erreur"               modèle invalide ou solution qui ne passe pas la vérification
+        "solveur_indisponible" OR-Tools ne peut pas être chargé sur cet ordinateur
     """
     statut: str
     message: str = ""
@@ -456,7 +488,7 @@ class PlanificateurJournee:
     def _reinitialiser(self):
         self.incoherences: list[Incoherence] = []
         self.ignores: list[dict] = []
-        self.model = cp_model.CpModel()
+        self.model = cp_model.CpModel() if ORTOOLS_DISPONIBLE else None
         self.taches: dict[int, _Tache] = {}
         self.repas_vars: dict[tuple[int, str], tuple] = {}
         self.occupations_soignant: dict[int, list[_Occupation]] = {}   # séances dédoublonnées
@@ -1237,6 +1269,8 @@ class PlanificateurJournee:
 
     def planifier(self) -> ResultatPlanification:
         """Calcule le planning. Ne modifie JAMAIS la base de données."""
+        if not ORTOOLS_DISPONIBLE:
+            return ResultatPlanification(statut="solveur_indisponible", message=MESSAGE_SOLVEUR_INDISPONIBLE)
         self._reinitialiser()
         self.charger_donnees()
         self.classer_rdv()

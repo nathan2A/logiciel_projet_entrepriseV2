@@ -11,6 +11,7 @@ possible leurs horaires. Pour chaque RDV à venir (ou séance de groupe) :
    nouvel horaire le même jour (seuls ces RDV sont replanifiés).
    Si le solveur ne trouve pas, le RDV reste « en attente » chez ce collègue :
    il apparaît dans son bandeau « À planifier » (bouton « Synchroniser »).
+   C'est aussi le cas si OR-Tools ne peut pas être chargé sur cet ordinateur.
 3. Aucun collègue de même profession : le RDV garde son horaire, sans ce
    soignant (à réattribuer à la main). Un RDV sans patient dont il était le
    seul participant est annulé.

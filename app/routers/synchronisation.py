@@ -14,6 +14,8 @@ de la période, puis enregistre les créneaux trouvés.
   lieu de bloquer toute la journée.
 - Une seule synchronisation à la fois (verrou PostgreSQL) : un second appel
   pendant le calcul reçoit 409, même avec plusieurs processus serveur.
+- Si OR-Tools ne peut pas être chargé sur cet ordinateur : 503 avec un
+  message clair (le reste de l'application fonctionne normalement).
 """
 
 from datetime import date, datetime, time, timedelta
@@ -26,7 +28,13 @@ from app import models as m
 from app import schemas
 from app.database import engine
 from app.deps import get_db, soignant_connecte
-from app.services.planification import ConfigPlanification, ConflitConcurrent, PlanificateurJournee
+from app.services.planification import (
+    MESSAGE_SOLVEUR_INDISPONIBLE,
+    ORTOOLS_DISPONIBLE,
+    ConfigPlanification,
+    ConflitConcurrent,
+    PlanificateurJournee,
+)
 
 router = APIRouter(prefix="/planification", tags=["Planification"])
 
@@ -83,6 +91,8 @@ def synchroniser(
     Planifie les RDV en attente de `jours` jours à partir de `du` (aujourd'hui
     par défaut) et enregistre les horaires trouvés. Réservé aux soignants.
     """
+    if not ORTOOLS_DISPONIBLE:
+        raise HTTPException(status_code=503, detail=MESSAGE_SOLVEUR_INDISPONIBLE)
     du = demande.du or date.today()
     jours = [du + timedelta(days=i) for i in range(demande.jours)]
 

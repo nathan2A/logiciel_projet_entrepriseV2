@@ -47,6 +47,14 @@ pas de nouvelle dépendance (`ortools` est déjà dans `requirements.txt`).
 | `inconnu` | Aucune solution dans le délai. **Ce n'est pas une preuve d'impossibilité.** | Non |
 | `donnees_incompletes` | Exemple : soignant sans horaire connu | Non |
 | `erreur` | Modèle invalide, ou solution refusée par la vérification indépendante | Non |
+| `solveur_indisponible` | OR-Tools ne peut pas être chargé sur cet ordinateur (voir ci-dessous) | Non |
+
+**Si OR-Tools ne se charge pas** (par exemple Windows 11 qui bloque sa bibliothèque :
+`OSError: [WinError 4551] Une stratégie de contrôle d'application a bloqué ce fichier`) :
+le serveur démarre quand même et affiche un avertissement. Tout fonctionne sauf le calcul
+de planning : « Synchroniser » répond 503 avec un message clair, et les RDV d'un soignant
+supprimé qui ne peuvent pas rester à la même heure passent « en attente ».
+Sur un ordinateur où OR-Tools se charge, rien ne change.
 
 Chaque solution est revérifiée en Python, sans faire confiance au solveur : horaires,
 chevauchements, délais, capacités, plages obligatoires, granularité.
